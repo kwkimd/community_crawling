@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>크롤러 - 아프니까사장이다</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Noto Sans KR', sans-serif; }
+    .tab-btn.active { @apply bg-blue-600 text-white; }
+    .spinner { border: 3px solid #e5e7eb; border-top-color: #2563eb; border-radius: 50%; width: 32px; height: 32px; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<nav class="bg-blue-700 text-white shadow-lg">
+  <div class="max-w-6xl mx-auto px-4 py-3">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="text-2xl font-bold">🤖 크롤러</span>
+        <span class="text-blue-200 text-sm">| 데이터 수집 도구</span>
+      </div>
+      <span class="text-blue-200 text-sm">로컬 실행 전용</span>
+    </div>
+  </div>
+</nav>
+
+<!-- 탭 메뉴 -->
+<div class="max-w-6xl mx-auto px-4 mt-6">
+  <div class="flex gap-2 border-b border-gray-200">
+    <button onclick="showTab('collect')" id="tab-collect"
+      class="tab-btn active px-5 py-2.5 rounded-t-lg font-medium text-sm transition-colors">
+      자동 수집
+    </button>
+    <button onclick="showTab('input')" id="tab-input"
+      class="tab-btn px-5 py-2.5 rounded-t-lg font-medium text-sm transition-colors text-gray-600 hover:bg-blue-50">
+      직접 입력
+    </button>
+  </div>
+</div>
+
+<div class="max-w-6xl mx-auto px-4 py-6">
+  
+  <!-- ── 자동 수집 탭 ────────────────────────────────────────────── -->
+  <div id="tab-content-collect" class="tab-content">
+  
+  <!-- 상태 표시 -->
+  <div class="bg-white rounded-xl shadow p-5 mb-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="font-semibold text-gray-700">수집 상태</h3>
+      <div id="status-badge" class="px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600">
+        대기 중
+      </div>
+    </div>
+    <div id="status-message" class="text-gray-600 text-sm mb-2">브라우저를 열어주세요.</div>
+    <div id="status-progress" class="hidden">
+      <div class="w-full bg-gray-200 rounded-full h-2">
+        <div id="progress-bar" class="bg-blue-600 h-2 rounded-full transition-all" style="width: 0%"></div>
+      </div>
+      <div class="text-xs text-gray-500 mt-1">
+        <span id="progress-text">0 / 0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 수집 설정 -->
+  <div class="bg-white rounded-xl shadow p-5 mb-6">
+    <h3 class="font-semibold text-gray-700 mb-4">수집 설정</h3>
+    
+    <!-- 지능형 자동 분류 안내 -->
+    <div class="bg-gradient-to-r from-blue-50 to-green-50 border border-blue-200 rounded-xl p-4 mb-4">
+      <h4 class="font-semibold text-blue-800 mb-3">🧠 지능형 자동 분류 시스템</h4>
+      <div class="grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">모니터링명 <span class="text-red-500">*</span></label>
+          <input type="text" id="collect-monitoring-name" placeholder="예: 1인분(한그릇)" required
+            class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">검색 키워드 <span class="text-red-500">*</span></label>
+          <input type="text" id="collect-search-keyword" placeholder="예: 배민, 쿠팡이츠" required
+            class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        </div>
+      </div>
+      
+      <div class="p-3 bg-white rounded-lg border border-blue-100">
+        <h5 class="font-medium text-gray-800 mb-2">✨ 자동 분류 항목:</h5>
+        <div class="grid grid-cols-2 gap-2 text-sm text-gray-600">
+          <div>• 감성 분석 (긍정/부정/중립)</div>
+          <div>• 위험도 (0~2단계)</div>
+          <div>• 주체 구분 (업주/라이더/소비자)</div>
+          <div>• 서비스 구분 (배민/쿠팡/요기요)</div>
+          <div>• 리스크 분류</div>
+          <div>• 분류 체계 (대/중/소분류)</div>
+          <div>• 키워드 자동 추출</div>
+          <div>• 자동 요약 생성</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 수집 옵션 -->
+    <div class="grid grid-cols-2 gap-4 mb-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">최대 수집 개수</label>
+        <input type="number" id="collect-max" min="1" placeholder="미입력시 전체 수집"
+          class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">카테고리</label>
+        <input type="text" id="collect-category" placeholder="선택사항"
+          class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">시작 날짜</label>
+        <input type="date" id="collect-date-from"
+          class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">종료 날짜</label>
+        <input type="date" id="collect-date-to"
+          class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+    </div>
+
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-gray-700 mb-1">게시판 URL</label>
+      <input type="text" id="collect-board-url" value="{{ board_url }}"
+        class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+    </div>
+
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-gray-700 mb-1">카페명</label>
+      <input type="text" id="collect-cafe-name" placeholder="자동 추출 (선택사항)"
+        class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+    </div>
+  </div>
+
+  <!-- 제어 버튼 -->
+  <div class="bg-white rounded-xl shadow p-5">
+    <div class="flex gap-3">
+      <button onclick="collectAction('open')"
+        class="bg-green-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors">
+        브라우저 열기
+      </button>
+      <button onclick="collectAction('start')"
+        class="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+        수집 시작
+      </button>
+      <button onclick="collectAction('close')"
+        class="bg-red-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors">
+        브라우저 닫기
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let pollTimer = null;
+
+async function collectAction(action) {
+  if (action === 'open') {
+    const res = await fetch('/api/scrape/open', { method: 'POST' });
+    const data = await res.json();
+    updateStatus(data);
+    startPolling();
+    return;
+  }
+
+  if (action === 'start') {
+    const maxVal = document.getElementById('collect-max').value.trim();
+    const maxPosts = maxVal ? parseInt(maxVal) : 0;
+    const category = document.getElementById('collect-category').value.trim();
+    const dateFrom = document.getElementById('collect-date-from').value;
+    const dateTo = document.getElementById('collect-date-to').value;
+    const boardUrl = document.getElementById('collect-board-url').value.trim();
+    const cafeName = document.getElementById('collect-cafe-name').value.trim();
+    const monitoringName = document.getElementById('collect-monitoring-name').value.trim();
+    const searchKeyword = document.getElementById('collect-search-keyword').value.trim();
+    
+    if (!monitoringName || !searchKeyword) {
+      alert('모니터링명과 검색 키워드는 필수입니다.');
+      return;
+    }
+    
+    const res = await fetch('/api/scrape/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        max_posts: maxPosts, category,
+        date_from: dateFrom, date_to: dateTo,
+        board_url: boardUrl, cafe_name: cafeName,
+        monitoring_name: monitoringName, search_keyword: searchKeyword,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      alert('오류: ' + (err.detail || '수집 시작 실패'));
+      return;
+    }
+    startPolling();
+    return;
+  }
+
+  if (action === 'close') {
+    stopPolling();
+    await fetch('/api/scrape/close', { method: 'POST' });
+    resetUI();
+    return;
+  }
+}
+
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(async () => {
+    const res = await fetch('/api/scrape/status');
+    const data = await res.json();
+    updateStatus(data);
+    if (data.status === 'done' || data.status === 'error') {
+      stopPolling();
+    }
+  }, 1000);
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+function updateStatus(data) {
+  const badge = document.getElementById('status-badge');
+  const message = document.getElementById('status-message');
+  const progressDiv = document.getElementById('status-progress');
+  const progressBar = document.getElementById('progress-bar');
+  const progressText = document.getElementById('progress-text');
+
+  message.textContent = data.message || '대기 중';
+
+  if (data.status === 'scraping') {
+    badge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-700';
+    badge.textContent = '수집 중';
+    progressDiv.classList.remove('hidden');
+    const percent = data.total > 0 ? (data.progress / data.total * 100) : 0;
+    progressBar.style.width = percent + '%';
+    progressText.textContent = `${data.progress} / ${data.total}`;
+  } else if (data.status === 'done') {
+    badge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-700';
+    badge.textContent = '완료';
+    progressDiv.classList.add('hidden');
+  } else if (data.status === 'error') {
+    badge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-700';
+    badge.textContent = '오류';
+    progressDiv.classList.add('hidden');
+  } else if (data.status === 'open') {
+    badge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-700';
+    badge.textContent = '준비됨';
+    progressDiv.classList.add('hidden');
+  } else {
+    badge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600';
+    badge.textContent = '대기 중';
+    progressDiv.classList.add('hidden');
+  }
+}
+
+function resetUI() {
+  document.getElementById('status-badge').className = 'px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600';
+  document.getElementById('status-badge').textContent = '대기 중';
+  document.getElementById('status-message').textContent = '브라우저를 열어주세요.';
+  document.getElementById('status-progress').classList.add('hidden');
+}
+</script>
+
+</body>
+</html>
+
+  <!-- ── 직접 입력 탭 ────────────────────────────────────────────── -->
+  <div id="tab-content-input" class="tab-content hidden">
+    <div class="bg-white rounded-xl shadow p-6 max-w-3xl mx-auto">
+      <h2 class="text-xl font-bold text-gray-800 mb-6">게시글 추가</h2>
+      <p class="text-sm text-gray-500 mb-6 bg-blue-50 p-3 rounded-lg">
+        카페 게시글을 복사하여 아래 양식에 붙여넣기 하세요.
+      </p>
+      <form id="post-form" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">제목 <span class="text-red-500">*</span></label>
+          <input type="text" id="f-title" required placeholder="게시글 제목을 입력하세요"
+            class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">카테고리</label>
+            <input type="text" id="f-category" placeholder="예: 창업고민, 운영"
+              class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">작성일</label>
+            <input type="date" id="f-date"
+              class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">작성자</label>
+            <input type="text" id="f-author" placeholder="선택 입력"
+              class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">조회수</label>
+              <input type="number" id="f-view" placeholder="0" min="0"
+                class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">댓글수</label>
+              <input type="number" id="f-comment" placeholder="0" min="0"
+                class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            </div>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">본문 <span class="text-red-500">*</span></label>
+          <textarea id="f-content" rows="10" required placeholder="게시글 본문을 복사하여 붙여넣기 하세요..."
+            class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y"></textarea>
+        </div>
+        <div class="flex gap-3">
+          <button type="submit"
+            class="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm">
+            저장하기
+          </button>
+          <button type="button" onclick="resetForm()"
+            class="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-200 transition-colors text-sm">
+            초기화
+          </button>
+        </div>
+      </form>
+      <div id="form-msg" class="mt-4 hidden"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// 탭 전환
+function showTab(tabName) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-content-' + tabName).classList.remove('hidden');
+  document.getElementById('tab-' + tabName).classList.add('active');
+}
+
+// 직접 입력 폼 제출
+document.getElementById('post-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = {
+    title: document.getElementById('f-title').value,
+    content: document.getElementById('f-content').value,
+    category: document.getElementById('f-category').value || '일반',
+    post_date: document.getElementById('f-date').value,
+    author: document.getElementById('f-author').value,
+    view_count: parseInt(document.getElementById('f-view').value) || 0,
+    comment_count: parseInt(document.getElementById('f-comment').value) || 0,
+  };
+  
+  const res = await fetch('/api/posts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(data)
+  });
+  
+  const result = await res.json();
+  const msg = document.getElementById('form-msg');
+  msg.className = 'mt-4 p-3 rounded-lg text-sm';
+  
+  if (result.success) {
+    msg.classList.add('bg-green-50', 'text-green-700');
+    msg.textContent = '✅ ' + result.message;
+    resetForm();
+  } else {
+    msg.classList.add('bg-red-50', 'text-red-700');
+    msg.textContent = '❌ 저장 실패';
+  }
+  msg.classList.remove('hidden');
+  setTimeout(() => msg.classList.add('hidden'), 3000);
+});
+
+function resetForm() {
+  document.getElementById('post-form').reset();
+}
+</script>
+
+</body>
+</html>

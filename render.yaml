@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: community-dashboard
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python dashboard_server.py
+    healthCheckPath: /health
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3-flash-preview
+      - key: PYTHON_VERSION
+        value: 3.11.0
+    autoDeploy: true

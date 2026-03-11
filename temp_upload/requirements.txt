@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+jinja2
+python-dotenv
+google-generativeai
+python-multipart
+aiofiles
+xlwt
+playwright

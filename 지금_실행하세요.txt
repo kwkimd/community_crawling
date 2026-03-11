@@ -1,0 +1,95 @@
+========================================
+  GitHub 배포 - 지금 실행할 명령어
+========================================
+
+아래 명령어를 순서대로 복사해서 실행하세요.
+
+----------------------------------------
+1단계: Git Bash 또는 PowerShell 열기
+----------------------------------------
+
+현재 폴더에서 마우스 우클릭 → "Git Bash Here" 또는 "PowerShell 여기서 열기"
+
+
+----------------------------------------
+2단계: 파일 추가 및 커밋
+----------------------------------------
+
+git add .
+git commit -m "Add deployment configuration for GitHub hosting"
+git push origin main
+
+
+----------------------------------------
+3단계: 배포 플랫폼 선택
+----------------------------------------
+
+옵션 A - Render (추천, 무료)
+  1. https://render.com 접속
+  2. GitHub 계정으로 로그인
+  3. "New +" → "Web Service"
+  4. 저장소 선택: kwkimd/community_crawling
+  5. 설정:
+     - Build Command: pip install -r requirements.txt
+     - Start Command: python dashboard_server.py
+  6. 환경 변수 추가:
+     - GEMINI_API_KEY: (API 키 입력)
+     - GEMINI_MODEL: gemini-2.0-flash
+  7. "Create Web Service" 클릭
+
+옵션 B - Railway (간단, 무료)
+  1. https://railway.app 접속
+  2. GitHub 계정으로 로그인
+  3. "New Project" → "Deploy from GitHub repo"
+  4. 저장소 선택: kwkimd/community_crawling
+  5. Variables 탭에서 환경 변수 추가
+  6. 자동 배포 시작
+
+
+----------------------------------------
+4단계: Gemini API 키 발급
+----------------------------------------
+
+아직 API 키가 없다면:
+  1. https://aistudio.google.com/app/apikey 접속
+  2. "Create API Key" 클릭
+  3. 생성된 키 복사
+  4. 배포 플랫폼의 환경 변수에 붙여넣기
+
+
+----------------------------------------
+완료!
+----------------------------------------
+
+배포가 완료되면 제공되는 URL로 접속하세요.
+
+예: https://community-dashboard.onrender.com
+
+
+========================================
+  문제 해결
+========================================
+
+Q: git push가 안 돼요
+A: git remote -v 로 원격 저장소 확인
+   없으면: git remote add origin https://github.com/kwkimd/community_crawling.git
+
+Q: 빌드가 실패해요
+A: 로그에서 오류 메시지 확인
+   requirements.txt 파일 확인
+
+Q: 서버가 시작 안 돼요
+A: 환경 변수 설정 확인
+   GEMINI_API_KEY가 올바르게 입력되었는지 확인
+
+
+========================================
+  더 자세한 가이드
+========================================
+
+- 시작하기.md - 전체 과정 설명
+- DEPLOYMENT.md - 상세 배포 가이드
+- 배포_체크리스트.md - 단계별 체크리스트
+- QUICKSTART.md - 3분 빠른 시작
+
+========================================

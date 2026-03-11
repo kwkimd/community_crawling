@@ -1,0 +1,1582 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>아프니까사장이다 분석 도구</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: 'Noto Sans KR', sans-serif; }
+    .tab-btn.active { @apply bg-blue-600 text-white; }
+    .spinner { border: 3px solid #e5e7eb; border-top-color: #2563eb; border-radius: 50%; width: 32px; height: 32px; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .tag { @apply inline-block px-2 py-0.5 rounded-full text-xs font-medium mr-1 mb-1; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<!-- 네비게이션 -->
+<nav class="bg-blue-700 text-white shadow-lg">
+  <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <span class="text-2xl font-bold">아프니까사장이다</span>
+      <span class="text-blue-200 text-sm">| 게시글 동향 분석 도구</span>
+    </div>
+    <div class="text-sm text-blue-200">총 <span id="nav-total" class="text-white font-bold">{{ stats.total }}</span>개 게시글</div>
+  </div>
+</nav>
+
+<!-- 탭 메뉴 -->
+<div class="max-w-7xl mx-auto px-4 mt-6">
+  <div class="flex gap-2 border-b border-gray-200 flex-wrap">
+    {% for tab in [('dashboard','대시보드'),('collect','자동 수집'),('input','직접 입력'),('list','게시글 목록'),('analyze','AI 분석')] %}
+    <button onclick="showTab('{{ tab[0] }}')"
+      id="tab-{{ tab[0] }}"
+      class="tab-btn px-5 py-2.5 rounded-t-lg font-medium text-sm transition-colors text-gray-600 hover:bg-blue-50 border-b-2 border-transparent">
+      {{ tab[1] }}
+    </button>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="max-w-7xl mx-auto px-4 py-6">
+
+  <!-- ── 대시보드 탭 ────────────────────────────────────────────── -->
+  <div id="tab-content-dashboard" class="tab-content">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div class="bg-white rounded-xl shadow p-5 flex flex-col gap-1">
+        <span class="text-gray-500 text-sm">전체 게시글</span>
+        <span class="text-3xl font-bold text-blue-600" id="stat-total">{{ stats.total }}</span>
+      </div>
+      <div class="bg-white rounded-xl shadow p-5 flex flex-col gap-1">
+        <span class="text-gray-500 text-sm">카테고리 수</span>
+        <span class="text-3xl font-bold text-green-600">{{ stats.categories | length }}</span>
+      </div>
+      <div class="bg-white rounded-xl shadow p-5 flex flex-col gap-1">
+        <span class="text-gray-500 text-sm">이번 달 게시글</span>
+        <span class="text-3xl font-bold text-purple-600" id="stat-this-month">
+          {% if stats.monthly %}{{ stats.monthly[0].cnt }}{% else %}0{% endif %}
+        </span>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+      <div class="bg-white rounded-xl shadow p-5">
+        <h3 class="font-semibold text-gray-700 mb-4">월별 게시글 수</h3>
+        <canvas id="chart-monthly" height="200"></canvas>
+      </div>
+      <div class="bg-white rounded-xl shadow p-5">
+        <h3 class="font-semibold text-gray-700 mb-4">카테고리 분포</h3>
+        <canvas id="chart-category" height="200"></canvas>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow p-5">
+      <h3 class="font-semibold text-gray-700 mb-4">최근 게시글</h3>
+      {% if recent_posts %}
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-gray-500">
+          <tr>
+            <th class="text-left px-3 py-2">제목</th>
+            <th class="text-left px-3 py-2">카테고리</th>
+            <th class="text-left px-3 py-2">작성일</th>
+            <th class="text-right px-3 py-2">조회</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in recent_posts %}
+          <tr class="border-t hover:bg-gray-50">
+            <td class="px-3 py-2 max-w-xs truncate">{{ p.title }}</td>
+            <td class="px-3 py-2"><span class="tag bg-blue-100 text-blue-700">{{ p.category }}</span></td>
+            <td class="px-3 py-2 text-gray-500">{{ p.post_date or '-' }}</td>
+            <td class="px-3 py-2 text-right text-gray-500">{{ p.view_count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-gray-400 text-center py-8">아직 게시글이 없습니다. <button onclick="showTab('input')" class="text-blue-600 underline">게시글을 추가해보세요!</button></p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ── 자동 수집 탭 ────────────────────────────────────────────── -->
+  <div id="tab-content-collect" class="tab-content hidden">
+    <div class="max-w-2xl mx-auto space-y-4">
+
+      <!-- 안내 카드 -->
+      <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+        <p class="font-semibold mb-1">사용 방법</p>
+        <ol class="list-decimal list-inside space-y-1 text-blue-700">
+          <li><b>브라우저 열기</b>를 클릭하면 Playwright 브라우저가 열립니다.</li>
+          <li>열린 브라우저에서 <b>네이버 로그인</b>을 직접 진행하세요.</li>
+          <li>로그인 후 수집할 게시판으로 이동하거나 <b>게시판으로 이동</b> 버튼을 누르세요.</li>
+          <li>수집할 개수를 설정하고 <b>수집 시작</b>을 클릭하세요.</li>
+          <li>수집이 완료되면 <b>자동으로 DB에 저장</b>됩니다.</li>
+        </ol>
+      </div>
+
+      <!-- 컨트롤 패널 -->
+      <div class="bg-white rounded-xl shadow p-6 space-y-4">
+        <h2 class="text-lg font-bold text-gray-800">게시글 자동 수집</h2>
+
+        <!-- 게시판 URL + 카페명 -->
+        <div class="flex gap-3">
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700 mb-1">게시판 URL</label>
+            <input type="text" id="collect-board-url" value="{{ board_url }}"
+              class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+          <div class="w-44">
+            <label class="block text-sm font-medium text-gray-700 mb-1">카페명 <span class="text-gray-400 font-normal">(구분용)</span></label>
+            <input type="text" id="collect-cafe-name" placeholder="예: 아프니까사장이다"
+              class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+        </div>
+
+        <!-- 날짜 범위 -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">작성일 범위 <span class="text-gray-400 font-normal">(비워두면 전체 수집)</span></label>
+          <div class="flex items-center gap-2">
+            <input type="date" id="collect-date-from"
+              class="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            <span class="text-gray-400 text-sm">~</span>
+            <input type="date" id="collect-date-to"
+              class="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+        </div>
+
+        <!-- 자동 분류 안내 -->
+        <div class="bg-gradient-to-r from-blue-50 to-green-50 border border-blue-200 rounded-xl p-4 mb-4">
+          <h4 class="font-semibold text-blue-800 mb-3">🧠 지능형 자동 분류 시스템</h4>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">모니터링명 <span class="text-red-500">*</span></label>
+              <input type="text" id="collect-monitoring-name" placeholder="예: 1인분(한그릇), 배달료 정책" required
+                class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">검색 키워드 <span class="text-red-500">*</span></label>
+              <input type="text" id="collect-search-keyword" placeholder="예: 배민, 쿠팡이츠, 배달료" required
+                class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            </div>
+          </div>
+          
+          <div class="mt-4 p-3 bg-white rounded-lg border border-blue-100">
+            <h5 class="font-medium text-gray-800 mb-2">✨ 자동으로 분류되는 항목들:</h5>
+            <div class="grid grid-cols-2 gap-2 text-sm text-gray-600">
+              <div>• <strong>감성 분석</strong>: 긍정/부정/중립</div>
+              <div>• <strong>위험도</strong>: 0~2단계 자동 계산</div>
+              <div>• <strong>주체 구분</strong>: 업주/라이더/소비자/기자</div>
+              <div>• <strong>서비스 구분</strong>: 배달의민족/쿠팡이츠/요기요</div>
+              <div>• <strong>리스크 분류</strong>: COMPLIANCE/OPERATIONAL/REPUTATION</div>
+              <div>• <strong>분류 체계</strong>: 대분류/중분류/소분류</div>
+              <div>• <strong>키워드 추출</strong>: 중요 키워드 자동 추출</div>
+              <div>• <strong>자동 요약</strong>: 내용 기반 요약 생성</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 기존 수집 설정 -->
+        <div class="flex items-center gap-4">
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700 mb-1">최대 수집 개수 <span class="text-gray-400 font-normal">(선택)</span></label>
+            <input type="number" id="collect-max" min="1"
+              placeholder="미입력시 기간 내 모든 게시글 수집"
+              class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700 mb-1">카테고리 (선택)</label>
+            <input type="text" id="collect-category" placeholder="예: 창업고민"
+              class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+        </div>
+
+        <!-- 버튼 -->
+        <div class="flex flex-wrap gap-2 pt-2">
+          <button onclick="collectAction('open')"
+            class="bg-green-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors">
+            브라우저 열기
+          </button>
+          <button onclick="collectAction('goto')"
+            class="bg-blue-100 text-blue-700 px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors">
+            게시판으로 이동
+          </button>
+          <button onclick="collectAction('start')"
+            class="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+            수집 시작
+          </button>
+          <button onclick="collectAction('close')"
+            class="bg-red-100 text-red-600 px-5 py-2 rounded-lg text-sm font-medium hover:bg-red-200 transition-colors">
+            브라우저 닫기
+          </button>
+        </div>
+      </div>
+
+      <!-- 상태 패널 -->
+      <div class="bg-white rounded-xl shadow p-5">
+        <h3 class="font-semibold text-gray-700 mb-3">수집 상태</h3>
+        <div class="flex items-center gap-3 mb-3">
+          <span id="collect-status-badge"
+            class="inline-block px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-500">대기 중</span>
+          <span id="collect-status-msg" class="text-sm text-gray-600">브라우저를 열어주세요.</span>
+        </div>
+        <!-- 진행 바 -->
+        <div id="collect-progress-wrap" class="hidden mb-3">
+          <div class="flex justify-between text-xs text-gray-500 mb-1">
+            <span id="collect-progress-label">0 / 0</span>
+            <span id="collect-progress-pct">0%</span>
+          </div>
+          <div class="w-full bg-gray-200 rounded-full h-2">
+            <div id="collect-progress-bar" class="bg-blue-500 h-2 rounded-full transition-all" style="width:0%"></div>
+          </div>
+        </div>
+        <!-- 수집 결과 요약 -->
+        <div id="collect-result-info" class="hidden text-sm text-gray-600 bg-green-50 rounded-lg p-3">
+          ✅ <span id="collect-result-count" class="font-bold text-green-700">0</span>개 게시글이 DB에 자동 저장되었습니다.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── 직접 입력 탭 ────────────────────────────────────────────── -->
+  <div id="tab-content-input" class="tab-content hidden">
+    <div class="bg-white rounded-xl shadow p-6 max-w-3xl mx-auto">
+      <h2 class="text-xl font-bold text-gray-800 mb-6">게시글 추가</h2>
+      <p class="text-sm text-gray-500 mb-6 bg-blue-50 p-3 rounded-lg">
+        카페 게시글을 복사하여 아래 양식에 붙여넣기 하세요. 분석 정확도를 높이려면 날짜와 카테고리를 함께 입력해주세요.
+      </p>
+      <form id="post-form" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">제목 <span class="text-red-500">*</span></label>
+          <input type="text" id="f-title" required placeholder="게시글 제목을 입력하세요"
+            class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">카테고리</label>
+            <input type="text" id="f-category" placeholder="예: 창업고민, 운영, 마케팅" list="category-list"
+              class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            <datalist id="category-list">
+              {% for c in categories %}
+              <option value="{{ c }}">
+              {% endfor %}
+            </datalist>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">작성일</label>
+            <input type="date" id="f-date"
+              class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">작성자 (닉네임)</label>
+            <input type="text" id="f-author" placeholder="선택 입력"
+              class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">조회수</label>
+              <input type="number" id="f-view" placeholder="0" min="0"
+                class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">댓글수</label>
+              <input type="number" id="f-comment" placeholder="0" min="0"
+                class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            </div>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">본문 <span class="text-red-500">*</span></label>
+          <textarea id="f-content" rows="10" required placeholder="게시글 본문을 복사하여 붙여넣기 하세요..."
+            class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y"></textarea>
+        </div>
+        <div class="flex gap-3">
+          <button type="submit"
+            class="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm">
+            저장하기
+          </button>
+          <button type="button" onclick="resetForm()"
+            class="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-200 transition-colors text-sm">
+            초기화
+          </button>
+        </div>
+      </form>
+      <div id="form-msg" class="mt-4 hidden"></div>
+    </div>
+  </div>
+
+  <!-- ── 게시글 목록 탭 ────────────────────────────────────────────── -->
+  <div id="tab-content-list" class="tab-content hidden">
+    <div class="bg-white rounded-xl shadow p-5 mb-4">
+      <div class="flex flex-wrap gap-3">
+        <input type="text" id="search-kw" placeholder="키워드 검색..." onkeydown="if(event.key==='Enter')loadPosts()"
+          class="border rounded-lg px-3 py-2 text-sm flex-1 min-w-48 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        <select id="filter-cat" onchange="loadPosts()"
+          class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+          <option value="">전체 카테고리</option>
+          {% for c in categories %}
+          <option value="{{ c }}">{{ c }}</option>
+          {% endfor %}
+        </select>
+        <select id="filter-cafe" onchange="loadPosts()"
+          class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+          <option value="">전체 카페</option>
+          {% for n in stats.cafe_names %}
+          <option value="{{ n }}">{{ n }}</option>
+          {% endfor %}
+        </select>
+        <input type="date" id="filter-from" onchange="loadPosts()"
+          class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        <span class="flex items-center text-gray-400 text-sm">~</span>
+        <input type="date" id="filter-to" onchange="loadPosts()"
+          class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        <button onclick="loadPosts()"
+          class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">검색</button>
+        <button onclick="downloadExcel()"
+          class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700 flex items-center gap-1.5">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Excel 다운로드
+        </button>
+      </div>
+    </div>
+    <div id="post-list" class="space-y-2"></div>
+    <div id="list-empty" class="hidden text-center text-gray-400 py-12">게시글이 없습니다.</div>
+  </div>
+
+  <!-- ── AI 분석 탭 ────────────────────────────────────────────── -->
+  <div id="tab-content-analyze" class="tab-content hidden">
+    <div class="max-w-6xl mx-auto space-y-6">
+      
+      <!-- 분석 설정 패널 -->
+      <div class="bg-white rounded-xl shadow p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xl font-bold text-gray-800">Gemini AI 종합 분석</h2>
+          <div class="flex items-center gap-3">
+            <label class="text-sm font-medium text-gray-700">기간별 분석:</label>
+            <select id="analysis-period" class="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <option value="all">전체 기간</option>
+              <option value="month">최근 1개월</option>
+              <option value="week">최근 1주일</option>
+              <option value="day">최근 1일</option>
+            </select>
+            <button onclick="runComprehensiveAnalysis()" 
+              class="bg-blue-600 text-white px-6 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+              종합 분석 실행
+            </button>
+            <button onclick="toggleAnalysisHistory()" 
+              class="bg-gray-100 text-gray-700 px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors">
+              분석 히스토리
+            </button>
+          </div>
+        </div>
+        <p class="text-sm text-gray-500">저장된 게시글을 Gemini AI가 종합 분석합니다. 감성분석, 키워드추출, 트렌드분석을 모두 포함한 리포트를 생성합니다.</p>
+      </div>
+
+      <!-- 분석 히스토리 패널 (기본 숨김) -->
+      <div id="analysis-history-panel" class="hidden bg-white rounded-xl shadow p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-bold text-gray-800">분석 히스토리</h3>
+          <button onclick="toggleAnalysisHistory()" class="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+        <div id="analysis-history-list" class="space-y-3">
+          <p class="text-gray-400 text-center py-8">분석 히스토리를 불러오는 중...</p>
+        </div>
+      </div>
+
+      <!-- 로딩 상태 -->
+      <div id="analyze-loading" class="hidden flex-col items-center py-12 gap-4">
+        <div class="spinner mx-auto"></div>
+        <p class="text-gray-500 text-sm">Gemini가 종합 분석 중입니다...</p>
+        <div class="text-xs text-gray-400">감성분석 → 키워드추출 → 트렌드분석 → 종합리포트 순으로 진행됩니다</div>
+      </div>
+
+      <!-- 오류 표시 -->
+      <div id="analyze-error" class="hidden bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm"></div>
+
+      <!-- 분석 결과 컨테이너 -->
+      <div id="analysis-results" class="hidden space-y-6">
+        
+        <!-- 요약 카드 -->
+        <div class="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-6 border">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-lg font-bold text-gray-800">📊 분석 요약</h3>
+            <div class="text-xs text-gray-400" id="analysis-id">분석 ID: -</div>
+          </div>
+          <div id="analysis-summary" class="text-gray-700"></div>
+          <div class="flex items-center gap-4 mt-4 text-sm text-gray-500">
+            <span id="analysis-post-count">분석 게시글: 0개</span>
+            <span id="analysis-date-range">기간: -</span>
+            <span id="analysis-timestamp">분석 시간: -</span>
+          </div>
+        </div>
+
+        <!-- 3개 분석 결과를 나란히 배치 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          <!-- 감성 분석 -->
+          <div class="bg-white rounded-xl shadow p-5">
+            <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+              <span class="text-green-500">😊</span> 감성 분석
+            </h3>
+            <div id="sentiment-result"></div>
+          </div>
+
+          <!-- 키워드 추출 -->
+          <div class="bg-white rounded-xl shadow p-5">
+            <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+              <span class="text-blue-500">🔍</span> 핵심 키워드
+            </h3>
+            <div id="keywords-result"></div>
+          </div>
+
+          <!-- 트렌드 분석 -->
+          <div class="bg-white rounded-xl shadow p-5">
+            <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+              <span class="text-purple-500">📈</span> 트렌드 분석
+            </h3>
+            <div id="trends-result"></div>
+          </div>
+        </div>
+
+        <!-- 종합 리포트 -->
+        <div class="bg-white rounded-xl shadow p-6">
+          <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <span class="text-orange-500">📋</span> 종합 리포트
+          </h3>
+          <div id="report-result"></div>
+        </div>
+
+        <!-- 액션 버튼 -->
+        <div class="flex justify-center gap-3">
+          <button onclick="exportAnalysisReport()" 
+            class="bg-green-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            리포트 다운로드
+          </button>
+          <button onclick="runComprehensiveAnalysis()" 
+            class="bg-blue-100 text-blue-700 px-6 py-2 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors">
+            다시 분석
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── 분석 결과 탭 제거됨 ── -->
+
+</div><!-- /main -->
+
+<script>
+// ── 탭 제어 ────────────────────────────────────────────────────────────────
+const TABS = ['dashboard','collect','input','list','analyze'];
+function showTab(name) {
+  TABS.forEach(t => {
+    document.getElementById('tab-content-' + t).classList.toggle('hidden', t !== name);
+    const btn = document.getElementById('tab-' + t);
+    btn.classList.toggle('bg-blue-600', t === name);
+    btn.classList.toggle('text-white', t === name);
+    btn.classList.toggle('border-blue-600', t === name);
+    btn.classList.toggle('text-gray-600', t !== name);
+  });
+  if (name === 'list') loadPosts();
+  if (name === 'analyze') loadLatestAnalysis(); // 자동 복원
+}
+
+// ── 차트 초기화 ─────────────────────────────────────────────────────────────
+const monthlyData = {{ stats.monthly | tojson }};
+const categoryData = {{ stats.categories | tojson }};
+
+if (monthlyData.length) {
+  new Chart(document.getElementById('chart-monthly'), {
+    type: 'bar',
+    data: {
+      labels: monthlyData.map(d => d.month).reverse(),
+      datasets: [{ label: '게시글 수', data: monthlyData.map(d => d.cnt).reverse(),
+        backgroundColor: '#3b82f6', borderRadius: 6 }]
+    },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+  });
+}
+
+if (categoryData.length) {
+  const colors = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4'];
+  new Chart(document.getElementById('chart-category'), {
+    type: 'doughnut',
+    data: {
+      labels: categoryData.map(d => d.category),
+      datasets: [{ data: categoryData.map(d => d.cnt), backgroundColor: colors }]
+    },
+    options: { plugins: { legend: { position: 'bottom' } } }
+  });
+}
+
+// ── 게시글 저장 ─────────────────────────────────────────────────────────────
+document.getElementById('post-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData();
+  fd.append('title', document.getElementById('f-title').value);
+  fd.append('content', document.getElementById('f-content').value);
+  fd.append('category', document.getElementById('f-category').value || '일반');
+  fd.append('post_date', document.getElementById('f-date').value);
+  fd.append('author', document.getElementById('f-author').value);
+  fd.append('view_count', document.getElementById('f-view').value || 0);
+  fd.append('comment_count', document.getElementById('f-comment').value || 0);
+
+  const resp = await fetch('/api/posts', { method: 'POST', body: fd });
+  const data = await resp.json();
+  const msgEl = document.getElementById('form-msg');
+  msgEl.classList.remove('hidden');
+  if (resp.ok) {
+    msgEl.className = 'mt-4 bg-green-50 border border-green-200 rounded-lg p-3 text-green-700 text-sm';
+    msgEl.textContent = '✓ ' + data.message;
+    document.getElementById('post-form').reset();
+    // 통계 업데이트
+    const stats = await (await fetch('/api/stats')).json();
+    document.getElementById('stat-total').textContent = stats.total;
+    document.getElementById('nav-total').textContent = stats.total;
+  } else {
+    msgEl.className = 'mt-4 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm';
+    msgEl.textContent = '오류: ' + (data.detail || '저장 실패');
+  }
+  setTimeout(() => msgEl.classList.add('hidden'), 4000);
+});
+
+function resetForm() {
+  document.getElementById('post-form').reset();
+  document.getElementById('form-msg').classList.add('hidden');
+}
+
+// ── 게시글 목록 ─────────────────────────────────────────────────────────────
+function _buildPostParams() {
+  const kw   = document.getElementById('search-kw').value;
+  const cat  = document.getElementById('filter-cat').value;
+  const cafe = document.getElementById('filter-cafe').value;
+  const from = document.getElementById('filter-from').value;
+  const to   = document.getElementById('filter-to').value;
+  const params = new URLSearchParams();
+  if (kw)   params.set('keyword', kw);
+  if (cat)  params.set('category', cat);
+  if (cafe) params.set('cafe_name', cafe);
+  if (from) params.set('date_from', from);
+  if (to)   params.set('date_to', to);
+  return params;
+}
+
+function downloadExcel() {
+  const params = _buildPostParams();
+  window.location.href = '/api/posts/export?' + params.toString();
+}
+
+async function loadPosts() {
+  const params = _buildPostParams();
+
+  const resp = await fetch('/api/posts?' + params);
+  const data = await resp.json();
+  const container = document.getElementById('post-list');
+  const empty = document.getElementById('list-empty');
+
+  if (!data.posts.length) {
+    container.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  container.innerHTML = data.posts.map(p => `
+    <div class="bg-white rounded-xl shadow-sm border hover:shadow-md transition-shadow p-4 cursor-pointer"
+         onclick="showPostModal(${p.id})">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex-1 min-w-0">
+          <div class="flex flex-wrap items-center gap-2 mb-1">
+            ${p.cafe_name ? `<span class="tag bg-purple-100 text-purple-700">${escHtml(p.cafe_name)}</span>` : ''}
+            <span class="tag bg-blue-100 text-blue-700">${escHtml(p.category || '일반')}</span>
+            ${p.post_date ? `<span class="text-xs text-gray-400">${p.post_date}</span>` : ''}
+            ${p.author ? `<span class="text-xs text-gray-400">${escHtml(p.author)}</span>` : ''}
+            ${p.post_url ? `<a href="${escHtml(p.post_url)}" target="_blank" rel="noopener"
+                onclick="event.stopPropagation()"
+                class="text-xs text-blue-500 hover:underline">원문 보기 ↗</a>` : ''}
+          </div>
+          <h4 class="font-medium text-gray-800 truncate">${escHtml(p.title)}</h4>
+          <p class="text-sm text-gray-500 mt-1 line-clamp-2">${escHtml(p.content.substring(0,150))}${p.content.length > 150 ? '...' : ''}</p>
+          <div class="flex gap-4 mt-2 text-xs text-gray-400">
+            <span>조회 ${p.view_count}</span>
+            <span>댓글 ${p.comment_count}</span>
+            <span class="text-blue-400">▶ 클릭하여 전체 보기</span>
+          </div>
+        </div>
+        <button onclick="event.stopPropagation(); deletePost(${p.id}, this)"
+          class="text-red-400 hover:text-red-600 text-sm px-2 py-1 rounded hover:bg-red-50 whitespace-nowrap">삭제</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function deletePost(id, btn) {
+  if (!confirm('이 게시글을 삭제하시겠습니까?')) return;
+  const resp = await fetch('/api/posts/' + id, { method: 'DELETE' });
+  if (resp.ok) {
+    btn.closest('div.bg-white').remove();
+    const stats = await (await fetch('/api/stats')).json();
+    document.getElementById('stat-total').textContent = stats.total;
+    document.getElementById('nav-total').textContent = stats.total;
+  }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── 게시글 상세 모달 ──────────────────────────────────────────────────────────
+async function showPostModal(id) {
+  const modal = document.getElementById('post-modal');
+  // 로딩 상태
+  document.getElementById('modal-title').textContent = '불러오는 중...';
+  document.getElementById('modal-meta').innerHTML = '';
+  document.getElementById('modal-content').textContent = '';
+  document.getElementById('modal-comments').innerHTML = '';
+  document.getElementById('modal-comment-count').textContent = '';
+  modal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+
+  try {
+    const resp = await fetch('/api/posts/' + id);
+    if (!resp.ok) throw new Error('게시글을 불러올 수 없습니다.');
+    const p = await resp.json();
+
+    // 메타 정보
+    const metaEl = document.getElementById('modal-meta');
+    metaEl.innerHTML = [
+      p.category ? `<span class="tag bg-blue-100 text-blue-700">${escHtml(p.category)}</span>` : '',
+      p.post_date ? `<span class="text-xs text-gray-400">📅 ${p.post_date}</span>` : '',
+      p.author    ? `<span class="text-xs text-gray-400">✍️ ${escHtml(p.author)}</span>` : '',
+      p.view_count > 0 ? `<span class="text-xs text-gray-400">👁 ${p.view_count}</span>` : '',
+    ].join('');
+
+    document.getElementById('modal-title').textContent = p.title;
+    document.getElementById('modal-content').textContent =
+      (p.content || '(내용 없음)').trim();
+
+    // 댓글
+    let comments = [];
+    try { comments = JSON.parse(p.comments || '[]'); } catch(e) {}
+    const commentCount = document.getElementById('modal-comment-count');
+    const commentBox = document.getElementById('modal-comments');
+    if (comments.length) {
+      commentCount.textContent = `(${comments.length}개)`;
+      commentBox.innerHTML = comments.map((c, i) => `
+        <div class="bg-gray-50 rounded-lg px-4 py-2.5 border text-sm text-gray-700">
+          <span class="text-gray-400 text-xs mr-2">#${i+1}</span>${escHtml(String(c))}
+        </div>`).join('');
+    } else {
+      commentCount.textContent = '';
+      commentBox.innerHTML = '<p class="text-sm text-gray-400">댓글이 없습니다.</p>';
+    }
+  } catch(e) {
+    document.getElementById('modal-title').textContent = '오류';
+    document.getElementById('modal-content').textContent = e.message;
+  }
+}
+
+function closePostModal() {
+  document.getElementById('post-modal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+// ESC 키로 모달 닫기
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closePostModal();
+});
+
+// ── AI 분석 ──────────────────────────────────────────────────────────────────
+const ANALYSIS_LABELS = {
+  sentiment: '감성 분석', keywords: '키워드 추출',
+  trends: '트렌드 분석', report: '종합 리포트'
+};
+
+let currentAnalysisId = null; // 현재 표시 중인 분석 ID
+
+// 자동 복원: 최근 분석 결과 로드
+async function loadLatestAnalysis() {
+  try {
+    const resp = await fetch('/api/analyses?limit=1');
+    const data = await resp.json();
+    
+    if (data.analyses && data.analyses.length > 0) {
+      const latest = data.analyses[0];
+      await loadAnalysisById(latest.id);
+    }
+  } catch(e) {
+    console.log('최근 분석 결과 없음:', e.message);
+  }
+}
+
+// 특정 분석 ID로 결과 로드
+async function loadAnalysisById(analysisId) {
+  try {
+    const resp = await fetch(`/api/analyses/${analysisId}`);
+    if (!resp.ok) return;
+    
+    const analysis = await resp.json();
+    currentAnalysisId = analysisId;
+    
+    // 4가지 분석 결과 파싱
+    const analyses = {};
+    ['sentiment', 'keywords', 'trends', 'report'].forEach(type => {
+      if (analysis.result[type]) {
+        analyses[type] = analysis.result[type];
+      }
+    });
+    
+    // 결과 렌더링
+    renderComprehensiveResults(analyses, analysis.post_count || 0, 'restored', analysis.created_at);
+    document.getElementById('analysis-results').classList.remove('hidden');
+    document.getElementById('analysis-id').textContent = `분석 ID: ${analysisId}`;
+    
+  } catch(e) {
+    console.error('분석 결과 로드 실패:', e);
+  }
+}
+
+// 분석 히스토리 토글
+async function toggleAnalysisHistory() {
+  const panel = document.getElementById('analysis-history-panel');
+  const isHidden = panel.classList.contains('hidden');
+  
+  if (isHidden) {
+    panel.classList.remove('hidden');
+    await loadAnalysisHistory();
+  } else {
+    panel.classList.add('hidden');
+  }
+}
+
+// 분석 히스토리 로드
+async function loadAnalysisHistory() {
+  const container = document.getElementById('analysis-history-list');
+  container.innerHTML = '<p class="text-gray-400 text-center py-4">히스토리를 불러오는 중...</p>';
+  
+  try {
+    const resp = await fetch('/api/analyses?limit=10');
+    const data = await resp.json();
+    
+    if (!data.analyses || data.analyses.length === 0) {
+      container.innerHTML = '<p class="text-gray-400 text-center py-8">분석 히스토리가 없습니다.</p>';
+      return;
+    }
+    
+    container.innerHTML = data.analyses.map(analysis => {
+      const date = new Date(analysis.created_at).toLocaleString();
+      const isActive = currentAnalysisId === analysis.id;
+      
+      return `
+        <div class="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors ${isActive ? 'border-blue-400 bg-blue-50' : ''}"
+             onclick="loadAnalysisById(${analysis.id})">
+          <div class="flex items-center justify-between mb-2">
+            <div class="font-medium text-gray-800">종합 분석 #${analysis.id}</div>
+            <div class="text-xs text-gray-500">${date}</div>
+          </div>
+          <div class="text-sm text-gray-600">
+            ${analysis.post_count ? `${analysis.post_count}개 게시글 분석` : '게시글 분석'}
+            ${isActive ? '<span class="text-blue-600 font-medium ml-2">● 현재 표시 중</span>' : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+    
+  } catch(e) {
+    container.innerHTML = '<p class="text-red-400 text-center py-8">히스토리 로드 실패</p>';
+  }
+}
+
+// 종합 분석 실행
+async function runComprehensiveAnalysis() {
+  const period = document.getElementById('analysis-period').value;
+  const loading = document.getElementById('analyze-loading');
+  const errEl = document.getElementById('analyze-error');
+  const resultsEl = document.getElementById('analysis-results');
+  
+  // UI 초기화
+  loading.classList.remove('hidden');
+  loading.classList.add('flex');
+  errEl.classList.add('hidden');
+  resultsEl.classList.add('hidden');
+
+  try {
+    // 기간별 게시글 필터링
+    const posts = await getPostsByPeriod(period);
+    if (!posts.length) {
+      throw new Error('분석할 게시글이 없습니다. 다른 기간을 선택해주세요.');
+    }
+
+    // 4가지 분석을 순차적으로 실행
+    const analyses = {};
+    const analysisTypes = ['sentiment', 'keywords', 'trends', 'report'];
+    
+    for (const type of analysisTypes) {
+      const resp = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, post_ids: posts.map(p => p.id) })
+      });
+      const data = await resp.json();
+      
+      if (!resp.ok) throw new Error(data.detail || `${type} 분석 실패`);
+      analyses[type] = data.result;
+    }
+
+    // 종합 분석 결과를 DB에 저장
+    const comprehensiveResult = await fetch('/api/analyze/comprehensive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        analyses, 
+        post_ids: posts.map(p => p.id),
+        period,
+        post_count: posts.length
+      })
+    });
+    
+    const savedAnalysis = await comprehensiveResult.json();
+    currentAnalysisId = savedAnalysis.analysis_id;
+
+    // 결과 렌더링
+    renderComprehensiveResults(analyses, posts.length, period);
+    resultsEl.classList.remove('hidden');
+    document.getElementById('analysis-id').textContent = `분석 ID: ${currentAnalysisId}`;
+
+  } catch(e) {
+    errEl.textContent = '오류: ' + e.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    loading.classList.add('hidden');
+    loading.classList.remove('flex');
+  }
+}
+
+// 기간별 게시글 조회
+async function getPostsByPeriod(period) {
+  let dateFrom = '';
+  const now = new Date();
+  
+  if (period === 'day') {
+    dateFrom = now.toISOString().split('T')[0]; // 오늘
+  } else if (period === 'week') {
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    dateFrom = weekAgo.toISOString().split('T')[0];
+  } else if (period === 'month') {
+    const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    dateFrom = monthAgo.toISOString().split('T')[0];
+  }
+  
+  const params = new URLSearchParams();
+  if (dateFrom) params.set('date_from', dateFrom);
+  
+  const resp = await fetch('/api/posts?' + params);
+  const data = await resp.json();
+  return data.posts || [];
+}
+
+// 종합 결과 렌더링
+function renderComprehensiveResults(analyses, postCount, period, timestamp = null) {
+  const periodLabels = {
+    all: '전체 기간', month: '최근 1개월', 
+    week: '최근 1주일', day: '최근 1일',
+    restored: '저장된 분석'
+  };
+  
+  // 요약 정보
+  document.getElementById('analysis-post-count').textContent = `분석 게시글: ${postCount}개`;
+  document.getElementById('analysis-date-range').textContent = `기간: ${periodLabels[period] || period}`;
+  
+  const displayTime = timestamp ? new Date(timestamp).toLocaleString() : new Date().toLocaleString();
+  document.getElementById('analysis-timestamp').textContent = `분석 시간: ${displayTime}`;
+  
+  // 종합 요약 (리포트의 executive_summary 사용)
+  const summary = analyses.report?.executive_summary || '종합 분석이 완료되었습니다.';
+  document.getElementById('analysis-summary').textContent = summary;
+  
+  // 각 분석 결과 렌더링
+  document.getElementById('sentiment-result').innerHTML = renderSentimentCompact(analyses.sentiment);
+  document.getElementById('keywords-result').innerHTML = renderKeywordsCompact(analyses.keywords);
+  document.getElementById('trends-result').innerHTML = renderTrendsCompact(analyses.trends);
+  document.getElementById('report-result').innerHTML = renderReportCompact(analyses.report);
+}
+
+// 컴팩트한 감성 분석 렌더링
+function renderSentimentCompact(r) {
+  if (!r) return '<p class="text-gray-400 text-sm">분석 결과 없음</p>';
+  
+  const pos = r.positive_ratio ?? 0;
+  const neg = r.negative_ratio ?? 0;
+  const neu = r.neutral_ratio ?? 0;
+  
+  return `
+    <div class="space-y-3">
+      <div class="grid grid-cols-3 gap-2 text-center">
+        <div class="bg-green-50 rounded-lg p-2">
+          <div class="text-lg font-bold text-green-600">${pos}%</div>
+          <div class="text-xs text-gray-500">긍정</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-2">
+          <div class="text-lg font-bold text-gray-500">${neu}%</div>
+          <div class="text-xs text-gray-500">중립</div>
+        </div>
+        <div class="bg-red-50 rounded-lg p-2">
+          <div class="text-lg font-bold text-red-500">${neg}%</div>
+          <div class="text-xs text-gray-500">부정</div>
+        </div>
+      </div>
+      <div class="text-xs text-gray-600 bg-gray-50 p-2 rounded">
+        ${escHtml(r.overall_sentiment || '')}
+      </div>
+      ${r.key_emotions ? `
+        <div class="flex flex-wrap gap-1">
+          ${r.key_emotions.slice(0,4).map(e => `<span class="tag bg-yellow-100 text-yellow-700 text-xs">${escHtml(e)}</span>`).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+// 컴팩트한 키워드 렌더링
+function renderKeywordsCompact(r) {
+  if (!r || !r.top_keywords) return '<p class="text-gray-400 text-sm">분석 결과 없음</p>';
+  
+  return `
+    <div class="space-y-2">
+      ${r.top_keywords.slice(0,5).map(k => `
+        <div class="flex items-center gap-2">
+          <span class="font-medium text-blue-600 text-sm">${escHtml(k.keyword)}</span>
+          <div class="flex-1 bg-gray-200 rounded-full h-1.5">
+            <div class="bg-blue-500 h-1.5 rounded-full" style="width:${Math.min(100, (k.count / (r.top_keywords[0]?.count || 1)) * 100)}%"></div>
+          </div>
+          <span class="text-xs text-gray-500">${k.count}</span>
+        </div>
+      `).join('')}
+      ${r.sales_opportunity_keywords?.length ? `
+        <div class="mt-3 pt-2 border-t">
+          <div class="text-xs font-medium text-gray-600 mb-1">기회 키워드</div>
+          <div class="flex flex-wrap gap-1">
+            ${r.sales_opportunity_keywords.slice(0,3).map(k => `<span class="tag bg-green-100 text-green-700 text-xs">${escHtml(k)}</span>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+// 컴팩트한 트렌드 렌더링
+function renderTrendsCompact(r) {
+  if (!r) return '<p class="text-gray-400 text-sm">분석 결과 없음</p>';
+  
+  return `
+    <div class="space-y-3">
+      <div class="text-xs text-gray-600 bg-blue-50 p-2 rounded">
+        ${escHtml(r.trend_summary?.substring(0,100) + '...' || '')}
+      </div>
+      ${r.topic_trends?.length ? `
+        <div class="space-y-2">
+          ${r.topic_trends.slice(0,3).map(t => `
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-medium text-gray-700">${escHtml(t.topic?.substring(0,15) + '...' || '')}</span>
+              <span class="tag text-xs ${t.direction === '증가' ? 'bg-red-100 text-red-600' : t.direction === '감소' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'}">
+                ${t.direction === '증가' ? '▲' : t.direction === '감소' ? '▼' : '→'}
+              </span>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+      ${r.forecast ? `
+        <div class="text-xs text-purple-600 bg-purple-50 p-2 rounded">
+          <strong>전망:</strong> ${escHtml(r.forecast.substring(0,80) + '...')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+// 컴팩트한 리포트 렌더링
+function renderReportCompact(r) {
+  if (!r) return '<p class="text-gray-400 text-sm">분석 결과 없음</p>';
+  
+  return `
+    <div class="space-y-4">
+      ${r.key_findings?.length ? `
+        <div>
+          <div class="text-sm font-medium text-gray-700 mb-2">핵심 발견사항</div>
+          <ul class="space-y-1">
+            ${r.key_findings.slice(0,3).map(f => `
+              <li class="flex items-start gap-2 text-sm text-gray-600">
+                <span class="text-blue-500 mt-0.5 shrink-0">✓</span>
+                <span>${escHtml(f.substring(0,100) + (f.length > 100 ? '...' : ''))}</span>
+              </li>
+            `).join('')}
+          </ul>
+        </div>
+      ` : ''}
+      
+      ${r.priority_improvements?.length ? `
+        <div>
+          <div class="text-sm font-medium text-gray-700 mb-2">우선순위 개선사항</div>
+          <div class="space-y-2">
+            ${r.priority_improvements.slice(0,2).map(imp => `
+              <div class="border-l-4 border-orange-400 pl-3 py-1">
+                <div class="font-medium text-sm text-gray-800">
+                  ${imp.priority}순위: ${escHtml(imp.improvement?.substring(0,50) + '...' || '')}
+                </div>
+                <div class="text-xs text-gray-500">${escHtml(imp.expected_effect?.substring(0,80) + '...' || '')}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+      
+      ${r.retention_actions?.length ? `
+        <div>
+          <div class="text-sm font-medium text-gray-700 mb-2">즉시 실행 가능한 액션</div>
+          <ul class="space-y-1">
+            ${r.retention_actions.slice(0,2).map(action => `
+              <li class="text-sm text-gray-600 flex items-start gap-1">
+                <span class="text-green-600">→</span>
+                <span>${escHtml(action.substring(0,80) + (action.length > 80 ? '...' : ''))}</span>
+              </li>
+            `).join('')}
+          </ul>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+// 리포트 다운로드 (기존 Excel 다운로드 활용)
+function exportAnalysisReport() {
+  const period = document.getElementById('analysis-period').value;
+  let params = new URLSearchParams();
+  
+  if (period === 'day') {
+    const today = new Date().toISOString().split('T')[0];
+    params.set('date_from', today);
+  } else if (period === 'week') {
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    params.set('date_from', weekAgo);
+  } else if (period === 'month') {
+    const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    params.set('date_from', monthAgo);
+  }
+  
+  window.location.href = '/api/posts/export?' + params.toString();
+}
+
+function renderSentiment(r) {
+  const pos = r.positive_ratio ?? 0;
+  const neg = r.negative_ratio ?? 0;
+  const neu = r.neutral_ratio ?? 0;
+  return `
+    <div class="grid grid-cols-3 gap-4 mb-6">
+      <div class="bg-green-50 rounded-xl p-4 text-center">
+        <div class="text-2xl font-bold text-green-600">${pos}%</div>
+        <div class="text-sm text-gray-500 mt-1">긍정</div>
+      </div>
+      <div class="bg-gray-50 rounded-xl p-4 text-center">
+        <div class="text-2xl font-bold text-gray-500">${neu}%</div>
+        <div class="text-sm text-gray-500 mt-1">중립</div>
+      </div>
+      <div class="bg-red-50 rounded-xl p-4 text-center">
+        <div class="text-2xl font-bold text-red-500">${neg}%</div>
+        <div class="text-sm text-gray-500 mt-1">부정</div>
+      </div>
+    </div>
+    <div class="mb-4">
+      <div class="text-sm font-medium text-gray-700 mb-1">전반적 감성</div>
+      <p class="text-gray-600">${escHtml(r.overall_sentiment ?? '')}</p>
+    </div>
+    <div class="mb-4">
+      <div class="text-sm font-medium text-gray-700 mb-2">요약</div>
+      <p class="text-gray-600 bg-gray-50 p-3 rounded-lg text-sm">${escHtml(r.summary ?? '')}</p>
+    </div>
+    <div class="mb-4">
+      <div class="text-sm font-medium text-gray-700 mb-2">주요 감정</div>
+      <div>${(r.key_emotions ?? []).map(e => `<span class="tag bg-yellow-100 text-yellow-700">${escHtml(e)}</span>`).join('')}</div>
+    </div>
+    ${r.notable_patterns ? `<div><div class="text-sm font-medium text-gray-700 mb-1">특이 패턴</div><p class="text-gray-600 text-sm">${escHtml(r.notable_patterns)}</p></div>` : ''}
+  `;
+}
+
+function renderKeywords(r) {
+  return `
+    <div class="mb-6">
+      <div class="text-sm font-medium text-gray-700 mb-3">상위 키워드</div>
+      <div class="space-y-2">
+        ${(r.top_keywords ?? []).map(k => `
+          <div class="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
+            <span class="font-bold text-blue-600 w-20 shrink-0">${escHtml(k.keyword)}</span>
+            <div class="flex-1 bg-gray-200 rounded-full h-2">
+              <div class="bg-blue-500 h-2 rounded-full" style="width:${Math.min(100, (k.count / (r.top_keywords[0]?.count || 1)) * 100)}%"></div>
+            </div>
+            <span class="text-xs text-gray-500 w-8 text-right">${k.count}</span>
+            <span class="text-xs text-gray-400 flex-1">${escHtml(k.context ?? '')}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <div class="text-sm font-medium text-gray-700 mb-2">급부상 이슈</div>
+        <ul class="text-sm text-gray-600 space-y-1">
+          ${(r.emerging_issues ?? []).map(i => `<li class="flex items-start gap-1"><span class="text-orange-500 mt-0.5">▲</span>${escHtml(i)}</li>`).join('')}
+        </ul>
+      </div>
+      <div>
+        <div class="text-sm font-medium text-gray-700 mb-2">반복 주제</div>
+        <ul class="text-sm text-gray-600 space-y-1">
+          ${(r.recurring_topics ?? []).map(i => `<li class="flex items-start gap-1"><span class="text-blue-500 mt-0.5">●</span>${escHtml(i)}</li>`).join('')}
+        </ul>
+      </div>
+    </div>
+  `;
+}
+
+function renderTrends(r) {
+  return `
+    <div class="mb-4 bg-blue-50 p-4 rounded-xl">
+      <p class="text-gray-700">${escHtml(r.trend_summary ?? '')}</p>
+    </div>
+    <div class="mb-6">
+      <div class="text-sm font-medium text-gray-700 mb-3">주제별 트렌드</div>
+      <div class="space-y-3">
+        ${(r.topic_trends ?? []).map(t => `
+          <div class="border rounded-xl p-4">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="font-medium text-gray-800">${escHtml(t.topic)}</span>
+              <span class="tag ${t.direction === '증가' ? 'bg-red-100 text-red-600' : t.direction === '감소' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'}">
+                ${t.direction === '증가' ? '▲' : t.direction === '감소' ? '▼' : '→'} ${escHtml(t.direction)}
+              </span>
+            </div>
+            <p class="text-sm text-gray-500">${escHtml(t.description ?? '')}</p>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    ${r.emerging_concerns?.length ? `
+      <div class="mb-4">
+        <div class="text-sm font-medium text-gray-700 mb-2">새롭게 떠오르는 우려</div>
+        <div>${(r.emerging_concerns ?? []).map(c => `<span class="tag bg-orange-100 text-orange-700">${escHtml(c)}</span>`).join('')}</div>
+      </div>` : ''}
+    ${r.predictions ? `
+      <div class="bg-purple-50 rounded-xl p-4">
+        <div class="text-sm font-medium text-purple-700 mb-1">향후 전망</div>
+        <p class="text-sm text-gray-600">${escHtml(r.predictions)}</p>
+      </div>` : ''}
+  `;
+}
+
+function renderReport(r) {
+  return `
+    <div class="mb-4 bg-blue-50 rounded-xl p-4">
+      <div class="text-sm font-medium text-blue-800 mb-2">요약</div>
+      <p class="text-gray-700">${escHtml(r.executive_summary ?? '')}</p>
+    </div>
+    <div class="mb-4">
+      <div class="text-sm font-medium text-gray-700 mb-2">핵심 발견사항</div>
+      <ul class="space-y-2">
+        ${(r.key_findings ?? []).map(f => `
+          <li class="flex items-start gap-2 text-sm text-gray-600">
+            <span class="text-blue-500 mt-0.5 shrink-0">✓</span>${escHtml(f)}
+          </li>`).join('')}
+      </ul>
+    </div>
+    <div class="mb-4">
+      <div class="text-sm font-medium text-gray-700 mb-2">주요 고충</div>
+      <div class="space-y-2">
+        ${(r.pain_points ?? []).map(pp => `
+          <div class="border-l-4 ${pp.severity === '높음' ? 'border-red-400' : pp.severity === '중간' ? 'border-yellow-400' : 'border-green-400'} pl-3 py-1">
+            <div class="font-medium text-sm text-gray-800">${escHtml(pp.issue)} <span class="tag ${pp.severity === '높음' ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-600'}">${escHtml(pp.severity)}</span></div>
+            <div class="text-xs text-gray-500">${escHtml(pp.detail ?? '')}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+    ${r.success_patterns?.length ? `
+      <div class="mb-4">
+        <div class="text-sm font-medium text-gray-700 mb-2">성공 패턴</div>
+        <ul class="space-y-1">
+          ${(r.success_patterns ?? []).map(s => `<li class="text-sm text-gray-600 flex items-start gap-1"><span class="text-green-500">★</span>${escHtml(s)}</li>`).join('')}
+        </ul>
+      </div>` : ''}
+    ${r.recommendations?.length ? `
+      <div class="bg-green-50 rounded-xl p-4">
+        <div class="text-sm font-medium text-green-800 mb-2">제언</div>
+        <ul class="space-y-1">
+          ${(r.recommendations ?? []).map(rec => `<li class="text-sm text-gray-600 flex items-start gap-1"><span class="text-green-600">→</span>${escHtml(rec)}</li>`).join('')}
+        </ul>
+      </div>` : ''}
+  `;
+}
+
+async function loadResults() {
+  const latest = sessionStorage.getItem('latest_analysis');
+  if (latest) {
+    const { type, result, post_count } = JSON.parse(latest);
+    renderLatestResult(type, result, post_count);
+    return;
+  }
+  // 저장된 분석 결과 목록 표시
+  const resp = await fetch('/api/analyses?limit=5');
+  const data = await resp.json();
+  if (!data.analyses.length) return;
+  const container = document.getElementById('results-container');
+  const first = data.analyses[0];
+  renderLatestResult(first.analysis_type, first.result, 0);
+}
+
+// ── 자동 수집 ────────────────────────────────────────────────────────────────
+let pollTimer = null;
+
+async function collectAction(action) {
+  if (action === 'open') {
+    const res = await fetch('/api/scrape/open', { method: 'POST' });
+    const data = await res.json();
+    updateCollectStatus(data);
+    startPolling();
+    return;
+  }
+
+  if (action === 'goto') {
+    const boardUrl = document.getElementById('collect-board-url').value.trim();
+    // 브라우저에서 해당 URL로 이동 (서버에 알림만)
+    const res = await fetch('/api/scrape/goto', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: boardUrl }),
+    });
+    if (!res.ok) {
+      alert('브라우저가 열려있지 않습니다. 먼저 브라우저를 열어주세요.');
+    }
+    return;
+  }
+
+  if (action === 'start') {
+    const maxVal   = document.getElementById('collect-max').value.trim();
+    const maxPosts = maxVal ? parseInt(maxVal) : 0;  // 0 = 기간 내 전체 수집
+    const category = document.getElementById('collect-category').value.trim();
+    const dateFrom = document.getElementById('collect-date-from').value;
+    const dateTo   = document.getElementById('collect-date-to').value;
+    const boardUrl = document.getElementById('collect-board-url').value.trim();
+    const cafeName = document.getElementById('collect-cafe-name').value.trim();
+    const monitoringName = document.getElementById('collect-monitoring-name').value.trim();
+    const searchKeyword = document.getElementById('collect-search-keyword').value.trim();
+    
+    const res = await fetch('/api/scrape/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        max_posts: maxPosts, category,
+        date_from: dateFrom, date_to: dateTo,
+        board_url: boardUrl, cafe_name: cafeName,
+        monitoring_name: monitoringName, search_keyword: searchKeyword,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      alert('오류: ' + (err.detail || '수집 시작 실패'));
+      return;
+    }
+    startPolling();
+    return;
+  }
+
+  if (action === 'close') {
+    stopPolling();
+    await fetch('/api/scrape/close', { method: 'POST' });
+    resetCollectUI();
+    return;
+  }
+}
+
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(async () => {
+    const res = await fetch('/api/scrape/status');
+    const data = await res.json();
+    updateCollectStatus(data);
+    if (data.status === 'done' || data.status === 'error' || data.status === 'idle') {
+      stopPolling();
+    }
+  }, 1500);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+let _lastDoneHandled = false;
+
+function updateCollectStatus(data) {
+  const badge = document.getElementById('collect-status-badge');
+  const msg = document.getElementById('collect-status-msg');
+  const progressWrap = document.getElementById('collect-progress-wrap');
+  const progressBar = document.getElementById('collect-progress-bar');
+  const progressLabel = document.getElementById('collect-progress-label');
+  const progressPct = document.getElementById('collect-progress-pct');
+  const resultInfo = document.getElementById('collect-result-info');
+
+  const statusMap = {
+    idle:     ['대기 중',   'bg-gray-100 text-gray-500'],
+    open:     ['브라우저 열림', 'bg-green-100 text-green-700'],
+    scraping: ['수집 중',   'bg-blue-100 text-blue-700'],
+    done:     ['완료',      'bg-green-100 text-green-700'],
+    error:    ['오류',      'bg-red-100 text-red-600'],
+  };
+  const [label, cls] = statusMap[data.status] || ['알 수 없음', 'bg-gray-100 text-gray-500'];
+  badge.textContent = label;
+  badge.className = `inline-block px-3 py-1 rounded-full text-xs font-bold ${cls}`;
+  msg.textContent = data.message || '';
+
+  if (data.status === 'scraping' && data.total > 0) {
+    progressWrap.classList.remove('hidden');
+    const pct = Math.round((data.progress / data.total) * 100);
+    progressBar.style.width = pct + '%';
+    progressLabel.textContent = `${data.progress} / ${data.total}`;
+    progressPct.textContent = pct + '%';
+  } else {
+    progressWrap.classList.add('hidden');
+  }
+
+  if (data.status === 'done') {
+    resultInfo.classList.remove('hidden');
+    document.getElementById('collect-result-count').textContent = data.result_count;
+    // 완료 후 통계 카운터 자동 갱신 (중복 방지)
+    if (!_lastDoneHandled) {
+      _lastDoneHandled = true;
+      fetch('/api/stats').then(r => r.json()).then(stats => {
+        document.getElementById('stat-total').textContent = stats.total;
+        document.getElementById('nav-total').textContent = stats.total;
+      });
+    }
+  } else {
+    if (data.status === 'scraping') _lastDoneHandled = false;
+    resultInfo.classList.add('hidden');
+  }
+}
+
+function resetCollectUI() {
+  updateCollectStatus({ status: 'idle', message: '브라우저를 열어주세요.', progress: 0, total: 0, result_count: 0 });
+}
+
+// 초기 탭
+showTab('dashboard');
+
+// 컴팩트한 감성 분석 렌더링
+function renderSentimentCompact(r) {
+  if (!r) return '<p class="text-gray-400 text-sm">분석 결과 없음</p>';
+  
+  const pos = r.positive_ratio ?? 0;
+  const neg = r.negative_ratio ?? 0;
+  const neu = r.neutral_ratio ?? 0;
+  
+  return `
+    <div class="space-y-3">
+      <div class="grid grid-cols-3 gap-2 text-center">
+        <div class="bg-green-50 rounded-lg p-2">
+          <div class="text-lg font-bold text-green-600">${pos}%</div>
+          <div class="text-xs text-gray-500">긍정</div>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-2">
+          <div class="text-lg font-bold text-gray-500">${neu}%</div>
+          <div class="text-xs text-gray-500">중립</div>
+        </div>
+        <div class="bg-red-50 rounded-lg p-2">
+          <div class="text-lg font-bold text-red-500">${neg}%</div>
+          <div class="text-xs text-gray-500">부정</div>
+        </div>
+      </div>
+      <div class="text-xs text-gray-600 bg-gray-50 p-2 rounded">
+        ${escHtml(r.overall_sentiment || '')}
+      </div>
+      ${r.key_emotions ? `
+        <div class="flex flex-wrap gap-1">
+          ${r.key_emotions.slice(0,4).map(e => `<span class="tag bg-yellow-100 text-yellow-700 text-xs">${escHtml(e)}</span>`).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+// 컴팩트한 키워드 렌더링
+function renderKeywordsCompact(r) {
+  if (!r || !r.top_keywords) return '<p class="text-gray-400 text-sm">분석 결과 없음</p>';
+  
+  return `
+    <div class="space-y-2">
+      ${r.top_keywords.slice(0,5).map(k => `
+        <div class="flex items-center gap-2">
+          <span class="font-medium text-blue-600 text-sm">${escHtml(k.keyword)}</span>
+          <div class="flex-1 bg-gray-200 rounded-full h-1.5">
+            <div class="bg-blue-500 h-1.5 rounded-full" style="width:${Math.min(100, (k.count / (r.top_keywords[0]?.count || 1)) * 100)}%"></div>
+          </div>
+          <span class="text-xs text-gray-500">${k.count}</span>
+        </div>
+      `).join('')}
+      ${r.sales_opportunity_keywords?.length ? `
+        <div class="mt-3 pt-2 border-t">
+          <div class="text-xs font-medium text-gray-600 mb-1">기회 키워드</div>
+          <div class="flex flex-wrap gap-1">
+            ${r.sales_opportunity_keywords.slice(0,3).map(k => `<span class="tag bg-green-100 text-green-700 text-xs">${escHtml(k)}</span>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+// 컴팩트한 트렌드 렌더링
+function renderTrendsCompact(r) {
+  if (!r) return '<p class="text-gray-400 text-sm">분석 결과 없음</p>';
+  
+  return `
+    <div class="space-y-3">
+      <div class="text-xs text-gray-600 bg-blue-50 p-2 rounded">
+        ${escHtml(r.trend_summary?.substring(0,100) + '...' || '')}
+      </div>
+      ${r.topic_trends?.length ? `
+        <div class="space-y-2">
+          ${r.topic_trends.slice(0,3).map(t => `
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-medium text-gray-700">${escHtml(t.topic?.substring(0,15) + '...' || '')}</span>
+              <span class="tag text-xs ${t.direction === '증가' ? 'bg-red-100 text-red-600' : t.direction === '감소' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'}">
+                ${t.direction === '증가' ? '▲' : t.direction === '감소' ? '▼' : '→'}
+              </span>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+      ${r.forecast ? `
+        <div class="text-xs text-purple-600 bg-purple-50 p-2 rounded">
+          <strong>전망:</strong> ${escHtml(r.forecast.substring(0,80) + '...')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+// 컴팩트한 리포트 렌더링
+function renderReportCompact(r) {
+  if (!r) return '<p class="text-gray-400 text-sm">분석 결과 없음</p>';
+  
+  return `
+    <div class="space-y-4">
+      ${r.key_findings?.length ? `
+        <div>
+          <div class="text-sm font-medium text-gray-700 mb-2">핵심 발견사항</div>
+          <ul class="space-y-1">
+            ${r.key_findings.slice(0,3).map(f => `
+              <li class="flex items-start gap-2 text-sm text-gray-600">
+                <span class="text-blue-500 mt-0.5 shrink-0">✓</span>
+                <span>${escHtml(f.substring(0,100) + (f.length > 100 ? '...' : ''))}</span>
+              </li>
+            `).join('')}
+          </ul>
+        </div>
+      ` : ''}
+      
+      ${r.priority_improvements?.length ? `
+        <div>
+          <div class="text-sm font-medium text-gray-700 mb-2">우선순위 개선사항</div>
+          <div class="space-y-2">
+            ${r.priority_improvements.slice(0,2).map(imp => `
+              <div class="border-l-4 border-orange-400 pl-3 py-1">
+                <div class="font-medium text-sm text-gray-800">
+                  ${imp.priority}순위: ${escHtml(imp.improvement?.substring(0,50) + '...' || '')}
+                </div>
+                <div class="text-xs text-gray-500">${escHtml(imp.expected_effect?.substring(0,80) + '...' || '')}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+      
+      ${r.retention_actions?.length ? `
+        <div>
+          <div class="text-sm font-medium text-gray-700 mb-2">즉시 실행 가능한 액션</div>
+          <ul class="space-y-1">
+            ${r.retention_actions.slice(0,2).map(action => `
+              <li class="text-sm text-gray-600 flex items-start gap-1">
+                <span class="text-green-600">→</span>
+                <span>${escHtml(action.substring(0,80) + (action.length > 80 ? '...' : ''))}</span>
+              </li>
+            `).join('')}
+          </ul>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+// 리포트 다운로드 (기존 Excel 다운로드 활용)
+function exportAnalysisReport() {
+  const period = document.getElementById('analysis-period').value;
+  let params = new URLSearchParams();
+  
+  if (period === 'day') {
+    const today = new Date().toISOString().split('T')[0];
+    params.set('date_from', today);
+  } else if (period === 'week') {
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    params.set('date_from', weekAgo);
+  } else if (period === 'month') {
+    const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    params.set('date_from', monthAgo);
+  }
+  
+  window.location.href = '/api/posts/export?' + params.toString();
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+
+<!-- ── 게시글 상세보기 모달 ────────────────────────────────────────────── -->
+<div id="post-modal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true">
+  <!-- 오버레이 -->
+  <div class="absolute inset-0 bg-black/50" onclick="closePostModal()"></div>
+  <!-- 패널 -->
+  <div class="absolute inset-4 md:inset-10 bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+    <!-- 헤더 -->
+    <div class="flex items-start justify-between gap-4 px-6 py-4 border-b bg-gray-50 shrink-0">
+      <div class="flex-1 min-w-0">
+        <div class="flex flex-wrap items-center gap-2 mb-1" id="modal-meta"></div>
+        <h2 class="text-lg font-bold text-gray-900 leading-snug" id="modal-title"></h2>
+      </div>
+      <button onclick="closePostModal()"
+        class="text-gray-400 hover:text-gray-600 text-2xl leading-none mt-0.5 shrink-0">✕</button>
+    </div>
+    <!-- 본문 + 댓글 스크롤 영역 -->
+    <div class="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+      <!-- 본문 -->
+      <div>
+        <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">본문</h3>
+        <div id="modal-content"
+          class="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed bg-gray-50 rounded-xl p-4 border"></div>
+      </div>
+      <!-- 댓글 -->
+      <div id="modal-comments-section">
+        <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+          댓글 <span id="modal-comment-count" class="text-blue-600"></span>
+        </h3>
+        <div id="modal-comments" class="space-y-2"></div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
