@@ -1,0 +1,25 @@
+stages:
+  - crawl
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  key: pip-cache
+  paths:
+    - .cache/pip/
+
+naver-cafe-monitor:
+  stage: crawl
+  image: mcr.microsoft.com/playwright/python:v1.49.0-jammy
+  before_script:
+    - pip install -r requirements.txt -q
+    - playwright install chromium --with-deps -q
+    - echo "$NAVER_SESSION_B64" | base64 -d > naver_session.json
+    - echo "$GOOGLE_CREDENTIALS_B64" | base64 -d > google_credentials.json
+  script:
+    - python naver_cafe_monitor.py
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "web"  # 수동 실행 허용
+  timeout: 30 minutes
