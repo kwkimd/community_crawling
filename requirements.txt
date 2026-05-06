@@ -7,3 +7,7 @@ python-multipart
 aiofiles
 xlwt
 playwright
+yt-dlp
+youtube-transcript-api
+gspread
+google-auth
