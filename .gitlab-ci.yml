@@ -15,8 +15,8 @@ naver-cafe-monitor:
   before_script:
     - pip install -r requirements.txt -q
     - playwright install --with-deps chromium
-    - echo "$NAVER_SESSION_B64" | base64 -d > naver_session.json
-    - echo "$GOOGLE_CREDENTIALS_B64" | base64 -d > google_credentials.json
+    - python3 -c "import base64,os; open('naver_session.json','wb').write(base64.b64decode(os.environ['NAVER_SESSION_B64']))"
+    - python3 -c "import base64,os; open('google_credentials.json','wb').write(base64.b64decode(os.environ['GOOGLE_CREDENTIALS_B64']))"
   script:
     - python naver_cafe_monitor.py
   rules:
