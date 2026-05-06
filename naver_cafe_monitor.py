@@ -14,6 +14,7 @@ import sys
 import json
 import base64
 import asyncio
+import re
 from pathlib import Path
 
 # ── 환경 설정 ──────────────────────────────────────────────────────────────────
@@ -27,6 +28,17 @@ TARGET_URLS = [
 ]
 
 MAX_POSTS_PER_URL = 30
+
+
+def _normalize_url(url: str) -> str:
+    """네이버 카페 URL에서 article ID만 추출해 정규화 (쿼리 파라미터 제거)
+
+    popular/menus/460 등 진입 경로마다 쿼리 파라미터가 달라서 같은 게시글이
+    다른 URL로 인식되는 중복 문제를 방지하기 위함.
+    예) articles/123?menuid=460& → articles/123
+    """
+    m = re.search(r"(cafe\.naver\.com/(?:f-e/cafes/\d+/articles|[^/?#]+)/\d+)", url)
+    return m.group(1) if m else url.split("?")[0]
 
 
 def _decode_env_file(env_var: str, output_path: str) -> bool:
@@ -153,10 +165,10 @@ async def run_monitor():
             )
             print(f"  링크 {len(links)}건 수집")
 
-            # 기존 URL 필터링
+            # 기존 URL 필터링 (쿼리 파라미터 제거 후 비교)
             new_links = [
                 lnk for lnk in links
-                if lnk.get("url", "") and lnk["url"] not in existing_urls
+                if lnk.get("url", "") and _normalize_url(lnk["url"]) not in existing_urls
             ]
             print(f"  신규 {len(new_links)}건 (기존 {len(links) - len(new_links)}건 스킵)")
 
@@ -166,12 +178,13 @@ async def run_monitor():
                     break
                 article = await scraper._scrape_article(page, link_info)
                 if article and not article.get("_fail_reason"):
-                    article["post_url"] = link_info["url"]
+                    normalized = _normalize_url(link_info["url"])
+                    article["post_url"] = normalized  # 정규화된 URL로 저장
                     article["site"] = "네이버 카페"
                     article["cafe_name"] = "아프니까사장이다"
                     article["monitoring_name"] = "아프니까사장이다"
                     all_new_posts.append(article)
-                    existing_urls.add(link_info["url"])  # 중복 방지
+                    existing_urls.add(normalized)  # 중복 방지
                 await asyncio.sleep(1)
 
         except Exception as e:

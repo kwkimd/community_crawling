@@ -215,12 +215,21 @@ class GoogleSheetsSync:
             return False
 
     def get_existing_urls(self) -> set:
-        """시트의 '게시글URL' 컬럼(25번째)에서 기존 URL 집합 반환 (중복 확인용)"""
+        """시트의 '게시글URL' 컬럼(25번째)에서 기존 URL 집합 반환 (중복 확인용)
+
+        쿼리 파라미터를 제거한 정규화 URL로 반환해 진입 경로가 달라도 중복 처리.
+        """
+        import re
+
+        def _norm(url: str) -> str:
+            m = re.search(r"(cafe\.naver\.com/(?:f-e/cafes/\d+/articles|[^/?#]+)/\d+)", url)
+            return m.group(1) if m else url.split("?")[0]
+
         if not self.sheet:
             return set()
         try:
             records = self.sheet.col_values(25)  # 1-indexed, 헤더 포함
-            return set(v for v in records[1:] if v)  # 헤더 및 빈 셀 제외
+            return set(_norm(v) for v in records[1:] if v)  # 헤더 및 빈 셀 제외
         except Exception as e:
             print(f"[시트] URL 목록 조회 실패: {e}")
             return set()
