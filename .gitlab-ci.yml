@@ -14,7 +14,7 @@ naver-cafe-monitor:
   image: mcr.microsoft.com/playwright/python:v1.49.0-jammy
   before_script:
     - pip install -r requirements.txt -q
-    - playwright install chromium --with-deps -q
+    - playwright install --with-deps chromium
     - echo "$NAVER_SESSION_B64" | base64 -d > naver_session.json
     - echo "$GOOGLE_CREDENTIALS_B64" | base64 -d > google_credentials.json
   script:
