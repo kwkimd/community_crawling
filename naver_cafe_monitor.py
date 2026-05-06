@@ -105,7 +105,6 @@ async def run_monitor():
     import scraper
     await scraper.open_browser(
         cafe_url=TARGET_URLS[0],
-        headless=True,
         force_headless=True,
     )
 
