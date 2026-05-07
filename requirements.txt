@@ -11,3 +11,4 @@ yt-dlp
 youtube-transcript-api
 gspread
 google-auth
+httpx
