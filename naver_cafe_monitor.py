@@ -218,31 +218,79 @@ async def run_monitor():
     # 6. Slack 알림 (키워드 무관, 수집된 전체 신규 글 알림)
     if all_new_posts:
         from slack_notifier import send_slack_message
+        from datetime import datetime
+
+        today = datetime.now().strftime("%Y. %m. %d.")
         blocks = [
             {
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": f"📋 아프니까 사장이다 — 신규 게시글 {len(all_new_posts)}건",
+                    "text": f"🌿 아프니까 사장이다 — 신규 게시글 {len(all_new_posts)}건 ({today})",
                     "emoji": True,
                 },
-            }
+            },
+            {"type": "divider"},
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "*📌 사장님 반응*"},
+            },
         ]
-        for i, post in enumerate(all_new_posts[:20]):
-            title = (post.get("title") or "제목 없음")[:50]
-            author = post.get("author") or "-"
-            date = post.get("post_date") or "-"
-            url = post.get("post_url") or ""
-            line = f"*{i+1}. {title}*\n작성자: {author} | {date}"
+
+        for post in all_new_posts[:20]:
+            title   = (post.get("title") or "제목 없음")[:60]
+            author  = post.get("author") or "-"
+            date    = (post.get("post_date") or "-").replace("-", ".")
+            views   = post.get("view_count") or 0
+            comments = post.get("comment_count") or 0
+            url     = post.get("post_url") or ""
+
+            # 카테고리 태그: 소분류 → 중분류 → 대분류 순으로 fallback
+            category = (
+                post.get("detail_category")
+                or post.get("sub_category")
+                or post.get("main_category")
+                or post.get("risk_classification")
+                or "기타"
+            )
+
+            # 요약 불렛 (summary / criticism_point 우선 활용)
+            summary  = (post.get("summary") or "").strip()
+            criticism = (post.get("criticism_point") or "").strip()
+            opinion   = (post.get("opinion_summary") or "").strip()
+
+            bullets = []
+            for text in [summary, criticism, opinion]:
+                if text and len(bullets) < 2:
+                    bullets.append(text[:80])
+
+            # 본문 앞부분으로 fallback
+            if not bullets:
+                content = (post.get("content") or "").strip()
+                if content:
+                    bullets.append(content[:80])
+
+            title_line = f"*[{category}] {title}*"
             if url:
-                line += f"\n<{url}|원문 보기>"
-            blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": line}})
+                title_line = f"*[{category}]* <{url}|{title}>"
+
+            bullet_lines = "\n".join(f"• {b}" for b in bullets)
+            meta_line = f"👤 {author}  |  📅 {date}  |  👁 {views}  |  💬 {comments}"
+
+            text = f"{title_line}\n{bullet_lines}\n{meta_line}" if bullet_lines else f"{title_line}\n{meta_line}"
+
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": text},
+            })
+
         if len(all_new_posts) > 20:
             blocks.append({
                 "type": "section",
                 "text": {"type": "mrkdwn", "text": f"_...외 {len(all_new_posts) - 20}건 더_"},
             })
         blocks.append({"type": "divider"})
+
         send_slack_message(f"[아프니까 사장이다] 신규 게시글 {len(all_new_posts)}건", blocks)
         print(f"[Slack] {len(all_new_posts)}건 알림 전송")
     else:
