@@ -35,10 +35,13 @@ def _normalize_url(url: str) -> str:
 
     popular/menus/460 등 진입 경로마다 쿼리 파라미터가 달라서 같은 게시글이
     다른 URL로 인식되는 중복 문제를 방지하기 위함.
-    예) articles/123?menuid=460& → articles/123
+    예) articles/123?menuid=460& → https://cafe.naver.com/f-e/cafes/.../articles/123
     """
     m = re.search(r"(cafe\.naver\.com/(?:f-e/cafes/\d+/articles|[^/?#]+)/\d+)", url)
-    return m.group(1) if m else url.split("?")[0]
+    path = m.group(1) if m else url.split("?")[0]
+    if not path.startswith("http"):
+        path = "https://" + path
+    return path
 
 
 def _decode_env_file(env_var: str, output_path: str) -> bool:

@@ -223,7 +223,10 @@ class GoogleSheetsSync:
 
         def _norm(url: str) -> str:
             m = re.search(r"(cafe\.naver\.com/(?:f-e/cafes/\d+/articles|[^/?#]+)/\d+)", url)
-            return m.group(1) if m else url.split("?")[0]
+            path = m.group(1) if m else url.split("?")[0]
+            if not path.startswith("http"):
+                path = "https://" + path
+            return path
 
         if not self.sheet:
             return set()
