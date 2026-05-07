@@ -116,7 +116,7 @@ def notify_new_posts(posts: list, source: str = "유튜브") -> int:
         {"type": "divider"},
         {
             "type": "section",
-            "text": {"type": "mrkdwn", "text": "*📌 수집 내용*"},
+            "text": {"type": "mrkdwn", "text": "*수집 내용*"},
         },
     ]
 
@@ -155,7 +155,7 @@ def notify_new_posts(posts: list, source: str = "유튜브") -> int:
             f"*[{category}] {title}*"
         )
         bullet_lines = "\n".join(f"• {b}" for b in bullets)
-        meta_line = f"👤 {author}  |  📅 {date}  |  👁 {views}  |  💬 {comments}"
+        meta_line = f"작성자 {author}  |  날짜 {date}  |  조회 {views}  |  댓글 {comments}"
 
         body = f"{title_line}\n{bullet_lines}\n{meta_line}" if bullet_lines else f"{title_line}\n{meta_line}"
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": body}})

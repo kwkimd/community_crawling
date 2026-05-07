@@ -1754,7 +1754,13 @@ async def _scrape_article(page: Page, info: dict) -> dict | None:
 
         # 네이버 카페는 iframe 로딩 대기 필요 (SPA라 로딩이 느림)
         if "cafe.naver.com" in url:
-            await asyncio.sleep(3)
+            # networkidle: 모든 네트워크 요청 완료 후 iframe이 생성될 때까지 대기
+            # CI headless 환경에서 SPA 초기화가 느릴 수 있어 충분한 시간 확보
+            try:
+                await art.wait_for_load_state("networkidle", timeout=10000)
+            except Exception:
+                pass
+            await asyncio.sleep(2)
         else:
             await asyncio.sleep(0.5)
 
@@ -1843,7 +1849,10 @@ async def _scrape_article(page: Page, info: dict) -> dict | None:
                         await asyncio.sleep(0.5)
                     break
         frame_urls = [f.url[:70] for f in art.frames]
-        print(f"[프레임] target={'iframe' if target != art else 'main'} | {frame_urls}")
+        found_iframe = target != art
+        print(f"[프레임] target={'iframe' if found_iframe else 'main'} | frames({len(frame_urls)}): {frame_urls}")
+        if not found_iframe and "cafe.naver.com" in url:
+            print(f"[프레임] [경고] ca-fe iframe 없음 — main frame 직접 시도: {url[:70]}")
 
         # ── 제목
         title = await _text(target, [

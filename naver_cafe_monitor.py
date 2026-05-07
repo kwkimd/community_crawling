@@ -162,7 +162,7 @@ async def run_monitor():
         # Slack 세션 만료 알림
         from slack_notifier import send_slack_message
         send_slack_message(
-            "⚠️ [아프니까 사장이다] 네이버 세션 만료.\n"
+            "[아프니까 사장이다] 네이버 세션 만료.\n"
             "갱신 후 GitLab 변수 업데이트 필요:\n"
             "1. 로컬: `python update_naver_session.py`\n"
             "2. GitLab > Settings > CI/CD > Variables > NAVER_SESSION_B64 업데이트"
@@ -176,7 +176,7 @@ async def run_monitor():
         print("[오류] 네이버 로그인 실패 — 세션 만료")
         from slack_notifier import send_slack_message
         send_slack_message(
-            "⚠️ [아프니까 사장이다] 네이버 세션 만료.\n"
+            "[아프니까 사장이다] 네이버 세션 만료.\n"
             "갱신 후 GitLab 변수 업데이트 필요."
         )
         await scraper.close_browser()
@@ -205,6 +205,9 @@ async def run_monitor():
                 if lnk.get("url", "") and _normalize_url(lnk["url"]) not in existing_urls
             ]
             print(f"  신규 {len(new_links)}건 (기존 {len(links) - len(new_links)}건 스킵)")
+            # 디버그: 수집된 링크 URL 형태 확인 (처음 3개)
+            for sample in links[:3]:
+                print(f"  [링크샘플] {sample.get('url', '')[:80]} | 날짜: {sample.get('list_date', '')}")
 
             # 본문 수집
             for i, link_info in enumerate(new_links):
@@ -219,6 +222,11 @@ async def run_monitor():
                     article["monitoring_name"] = "아프니까사장이다"
                     all_new_posts.append(article)
                     existing_urls.add(normalized)  # 중복 방지
+                    has_content = bool(article.get("content") and article["content"] != "(내용 없음)")
+                    content_flag = "[OK]" if has_content else "[내용없음]"
+                    print(f"  [스크래핑] {content_flag} {link_info.get('url','')[:60]} | 날짜:{article.get('post_date','')} 조회:{article.get('view_count',0)}")
+                elif article:
+                    print(f"  [스크래핑] [실패] {article.get('_fail_reason','')} — {link_info.get('url','')[:60]}")
                 await asyncio.sleep(1)
 
         except Exception as e:
@@ -268,7 +276,7 @@ async def run_monitor():
             {"type": "divider"},
             {
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": "*📌 사장님 반응*"},
+                "text": {"type": "mrkdwn", "text": "*사장님 반응*"},
             },
         ]
 
@@ -310,7 +318,7 @@ async def run_monitor():
                 title_line = f"*[{category}]* <{url}|{title}>"
 
             bullet_lines = "\n".join(f"• {b}" for b in bullets)
-            meta_line = f"👤 {author}  |  📅 {date}  |  👁 {views}  |  💬 {comments}"
+            meta_line = f"작성자 {author}  |  날짜 {date}  |  조회 {views}  |  댓글 {comments}"
 
             text = f"{title_line}\n{bullet_lines}\n{meta_line}" if bullet_lines else f"{title_line}\n{meta_line}"
 
