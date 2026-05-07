@@ -29,6 +29,28 @@ TARGET_URLS = [
 
 MAX_POSTS_PER_URL = 30
 
+# 배민 관련 키워드 — 이 중 하나라도 포함된 게시글만 Slack 알림
+# (Google Sheets에는 키워드 무관 전체 수집)
+BAEMIN_KEYWORDS = [
+    "배달의민족", "배민", "배달앱", "배달 앱",
+    "수수료", "배달비", "배달플랫폼", "배달 플랫폼",
+    "쿠팡이츠", "요기요", "땡겨요",
+    "울트라콜", "오픈리스트", "스마트플레이스",
+    "라이더", "배달원", "배달기사",
+    "광고비", "노출", "리뷰", "별점",
+]
+
+
+def _is_baemin_related(post: dict) -> bool:
+    """게시글 제목+내용+요약에 배민 관련 키워드가 포함되어 있는지 확인"""
+    haystack = " ".join([
+        (post.get("title") or ""),
+        (post.get("content") or "")[:500],
+        (post.get("summary") or ""),
+        (post.get("criticism_point") or ""),
+    ]).lower()
+    return any(kw.lower() in haystack for kw in BAEMIN_KEYWORDS)
+
 
 def _normalize_url(url: str) -> str:
     """네이버 카페 URL에서 article ID만 추출해 정규화 (쿼리 파라미터 제거)
@@ -215,8 +237,12 @@ async def run_monitor():
         else:
             print("[시트] 저장 실패")
 
-    # 6. Slack 알림 (키워드 무관, 수집된 전체 신규 글 알림)
-    if all_new_posts:
+    # 6. Slack 알림 (배민 관련 키워드 포함 게시글만)
+    # Google Sheets에는 전체 저장, Slack에는 배민 언급 게시글만 필터링
+    baemin_posts = [p for p in all_new_posts if _is_baemin_related(p)]
+    print(f"[필터] 배민 관련 게시글: {len(baemin_posts)}건 / 전체 {len(all_new_posts)}건")
+
+    if baemin_posts:
         from slack_notifier import send_slack_message
         from datetime import datetime
 
@@ -226,7 +252,7 @@ async def run_monitor():
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": f"🌿 아프니까 사장이다 — 신규 게시글 {len(all_new_posts)}건 ({today})",
+                    "text": f"🌿 아프니까 사장이다 — 배민 관련 {len(baemin_posts)}건 ({today})",
                     "emoji": True,
                 },
             },
@@ -237,7 +263,7 @@ async def run_monitor():
             },
         ]
 
-        for post in all_new_posts[:20]:
+        for post in baemin_posts[:20]:
             title   = (post.get("title") or "제목 없음")[:60]
             author  = post.get("author") or "-"
             date    = (post.get("post_date") or "-").replace("-", ".")
@@ -284,17 +310,20 @@ async def run_monitor():
                 "text": {"type": "mrkdwn", "text": text},
             })
 
-        if len(all_new_posts) > 20:
+        if len(baemin_posts) > 20:
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": f"_...외 {len(all_new_posts) - 20}건 더_"},
+                "text": {"type": "mrkdwn", "text": f"_...외 {len(baemin_posts) - 20}건 더_"},
             })
         blocks.append({"type": "divider"})
 
-        send_slack_message(f"[아프니까 사장이다] 신규 게시글 {len(all_new_posts)}건", blocks)
-        print(f"[Slack] {len(all_new_posts)}건 알림 전송")
+        send_slack_message(f"[아프니까 사장이다] 배민 관련 {len(baemin_posts)}건", blocks)
+        print(f"[Slack] {len(baemin_posts)}건 알림 전송")
     else:
-        print("[완료] 신규 게시글 없음")
+        if all_new_posts:
+            print(f"[완료] 신규 게시글 {len(all_new_posts)}건 수집 (배민 관련 없음, Slack 알림 생략)")
+        else:
+            print("[완료] 신규 게시글 없음")
 
     # 7. 정리
     await scraper.close_browser()
