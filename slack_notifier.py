@@ -59,25 +59,25 @@ def send_slack_message(text: str, blocks: list = None) -> bool:
 
 
 def notify_new_posts(posts: list, source: str = "유튜브") -> int:
-    """새 게시글 목록에서 키워드 매칭된 것만 채널별로 묶어서 Slack 알림 1건 전송
-    
+    """새 게시글 목록에서 키워드 매칭된 것만 Slack으로 일괄 알림
+
     Args:
         posts: 게시글 목록 (title, content, post_url, author, post_date 포함)
-        source: 출처 (유튜브, 커뮤니티 등)
-    
+        source: 출처 레이블 (유튜브, 커뮤니티, 자동 수집 등)
+
     Returns:
         알림에 포함된 게시글 수
     """
     if not SLACK_WEBHOOK_URL:
         return 0
 
-    from services.keyword_service import load_keyword_config
-    kw_config = load_keyword_config()
-    or_keywords = kw_config.get("or_keywords", "").strip()
-    if not or_keywords:
-        return 0
+    try:
+        from services.keyword_service import load_keyword_config
+        kw_config = load_keyword_config()
+        or_keywords = kw_config.get("or_keywords", "").strip()
+    except Exception:
+        or_keywords = ""
 
-    keywords = [k.strip().lower() for k in or_keywords.split(",") if k.strip()]
     notified = _load_notified()
     matched_posts = []
 
@@ -88,58 +88,92 @@ def notify_new_posts(posts: list, source: str = "유튜브") -> int:
         if post_id in notified:
             continue
 
-        title = (post.get("title") or "").lower()
-        content = (post.get("content") or "")[:500].lower()
-        text = title + " " + content
+        # 키워드 필터 (설정 없으면 전체 허용)
+        if or_keywords:
+            keywords = [k.strip().lower() for k in or_keywords.split(",") if k.strip()]
+            title_content = (post.get("title") or "").lower() + " " + (post.get("content") or "")[:500].lower()
+            matched = [kw for kw in keywords if kw in title_content]
+            if not matched:
+                continue
+        else:
+            matched = []
 
-        matched = [kw for kw in keywords if kw in text]
-        if not matched:
-            continue
-
-        matched_posts.append({
-            "title": post.get("title", "제목 없음"),
-            "matched": matched,
-            "author": post.get("author", ""),
-            "post_date": post.get("post_date", ""),
-            "post_url": post_url,
-            "post_id": post_id,
-        })
+        matched_posts.append({**post, "_matched": matched, "_post_id": post_id})
 
     if not matched_posts:
         return 0
 
-    # 채널별 묶음 메시지 구성
+    today = datetime.now().strftime("%Y. %m. %d.")
     blocks = [
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": f"🔔 {source} 수집 완료 — 키워드 매칭 {len(matched_posts)}건", "emoji": True}
+            "text": {
+                "type": "plain_text",
+                "text": f"🌿 {source} — 신규 게시글 {len(matched_posts)}건 ({today})",
+                "emoji": True,
+            },
+        },
+        {"type": "divider"},
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "*📌 수집 내용*"},
         },
     ]
 
-    for i, mp in enumerate(matched_posts[:20]):  # 최대 20건
-        title_text = mp["title"][:50]
-        kw_text = ", ".join(mp["matched"][:3])
-        date_text = mp["post_date"] or "-"
-        author_text = mp["author"] or "-"
-        
-        line = f"*{i+1}. {title_text}*\n키워드: `{kw_text}` | 작성자: {author_text} | {date_text}"
-        if mp["post_url"]:
-            line += f"\n<{mp['post_url']}|원문 보기>"
-        
-        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": line}})
+    for post in matched_posts[:20]:
+        title    = (post.get("title") or "제목 없음")[:60]
+        author   = post.get("author") or "-"
+        date     = (post.get("post_date") or "-").replace("-", ".")
+        views    = post.get("view_count") or 0
+        comments = post.get("comment_count") or 0
+        url      = post.get("post_url") or ""
+        matched  = post.get("_matched") or []
+
+        # 카테고리 태그
+        category = (
+            post.get("detail_category")
+            or post.get("sub_category")
+            or post.get("main_category")
+            or post.get("risk_classification")
+            or (f"키워드: {matched[0]}" if matched else "기타")
+        )
+
+        # 요약 불렛 (summary → criticism_point → opinion_summary → 본문 앞부분)
+        bullets = []
+        for field in ["summary", "criticism_point", "opinion_summary"]:
+            text = (post.get(field) or "").strip()
+            if text and len(bullets) < 2:
+                bullets.append(text[:80])
+        if not bullets:
+            content = (post.get("content") or "").strip()
+            if content:
+                bullets.append(content[:80])
+
+        title_line = (
+            f"*[{category}]* <{url}|{title}>"
+            if url else
+            f"*[{category}] {title}*"
+        )
+        bullet_lines = "\n".join(f"• {b}" for b in bullets)
+        meta_line = f"👤 {author}  |  📅 {date}  |  👁 {views}  |  💬 {comments}"
+
+        body = f"{title_line}\n{bullet_lines}\n{meta_line}" if bullet_lines else f"{title_line}\n{meta_line}"
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": body}})
 
     if len(matched_posts) > 20:
-        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": f"_...외 {len(matched_posts) - 20}건 더_"}})
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"_...외 {len(matched_posts) - 20}건 더_"},
+        })
 
     blocks.append({"type": "divider"})
 
-    fallback_text = f"[{source}] 키워드 매칭 {len(matched_posts)}건 수집 완료"
-
+    fallback_text = f"[{source}] 신규 게시글 {len(matched_posts)}건"
     if send_slack_message(fallback_text, blocks):
-        for mp in matched_posts:
-            notified.add(mp["post_id"])
+        for post in matched_posts:
+            notified.add(post["_post_id"])
         _save_notified(notified)
-        print(f"[Slack] {source} 묶음 알림 전송: {len(matched_posts)}건")
+        print(f"[Slack] {source} 알림 전송: {len(matched_posts)}건")
         return len(matched_posts)
 
     return 0
