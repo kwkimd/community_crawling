@@ -1760,7 +1760,19 @@ async def _scrape_article(page: Page, info: dict) -> dict | None:
                 await art.wait_for_load_state("networkidle", timeout=10000)
             except Exception:
                 pass
-            await asyncio.sleep(2)
+            # 본문 컨테이너가 실제로 DOM에 나타날 때까지 추가 대기 (최대 8초)
+            # f-e/cafes 신형 SPA는 networkidle 후에도 React 마운트가 완료 안 될 수 있음
+            try:
+                await art.wait_for_selector(
+                    ".se-main-container, #tbody, .article_body, "
+                    ".CafeViewer, .article-viewer, .ArticleViewer, "
+                    "[class*='ArticleViewer'], [class*='article_viewer'], "
+                    "[class*='ArticleContent'], [class*='article_content']",
+                    timeout=8000,
+                )
+            except Exception:
+                pass
+            await asyncio.sleep(1)
         else:
             await asyncio.sleep(0.5)
 
@@ -1903,6 +1915,11 @@ async def _scrape_article(page: Page, info: dict) -> dict | None:
         date_raw = await _text(target, [
             "em.date", ".date", "span.date",
             ".article_info .date", ".article_head .date",
+            # 신형 ca-fe SPA
+            "._date", ".date_area",
+            "[class*='ArticleDate']", "[class*='article_date']",
+            "[class*='WriteDate']", "[class*='write_date']",
+            "[class*='PostDate']", "[class*='post_date']",
             ".write_info", ".post-time", ".publish_date",
             "span[class*='date']", "[class*='date']",
             "p.date", "time",
@@ -1937,12 +1954,22 @@ async def _scrape_article(page: Page, info: dict) -> dict | None:
         author = await _text(target, [
             ".nick", ".member_info .writer", "span.writer",
             ".article_head .nick", ".writer_nick", "a.m-tcol-c",
+            # 신형 ca-fe SPA
+            "._nickName", "._nick",
+            "[class*='NickName']", "[class*='nickName']",
+            "[class*='ArticleAuthor']", "[class*='article_author']",
+            "[class*='WriterName']", "[class*='writer_name']",
             "[class*='nick']", "[class*='author']",
         ])
 
         # ── 조회수
         view_str = await _text(target, [
-            ".count_view", ".view_count", "em[class*='view']", "[class*='view_count']",
+            ".count_view", ".view_count",
+            "em[class*='view']", "[class*='view_count']",
+            # 신형 ca-fe SPA
+            "[class*='ViewCount']", "[class*='view_count']",
+            "[class*='ArticleView']", "[class*='article_view']",
+            "[class*='ReadCount']", "[class*='read_count']",
         ])
         view_count = _to_int(view_str)
 
@@ -1951,6 +1978,10 @@ async def _scrape_article(page: Page, info: dict) -> dict | None:
 
         if not title and not content:
             return {"_fail_reason": "제목/본문 없음 (페이지 로딩 실패 또는 삭제된 게시글)"}
+
+        # 이미지 alt 노이즈 텍스트 최종 정리 (이미지 차단으로 인한 alt 텍스트 잔존 방지)
+        if content:
+            content = _clean_content_text(content) or "(내용 없음)"
 
         return {
             "title": title or "제목 없음",
@@ -1976,12 +2007,36 @@ async def _scrape_article(page: Page, info: dict) -> dict | None:
             except: pass
 
 
+_IMAGE_NOISE_TEXTS = [
+    "존재하지 않는 이미지입니다.",
+    "이미지를 불러올 수 없습니다.",
+    "이미지 로딩에 실패했습니다.",
+]
+
+
+def _clean_content_text(text: str) -> str:
+    """본문에서 이미지 alt 노이즈 텍스트 제거"""
+    for noise in _IMAGE_NOISE_TEXTS:
+        text = text.replace(noise, "")
+    # 연속 빈 줄 제거
+    import re as _re
+    text = _re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
 async def _extract_body(target) -> str:
     """SmartEditor 2/3, 클리앙, 디시인사이드, 에펨코리아 등 본문 추출"""
     selectors = [
-        ".se-main-container",   # SmartEditor 3 (네이버)
-        "#tbody",               # SmartEditor 2 (네이버)
+        ".se-main-container",        # SmartEditor 3 (네이버)
+        "#tbody",                    # SmartEditor 2 (네이버)
         ".article_body",
+        # 신형 ca-fe SPA (2024~)
+        ".article-viewer",
+        ".ArticleViewer",
+        "[class*='ArticleViewer']",
+        "[class*='article_viewer']",
+        "[class*='ArticleContent']",
+        "[class*='article_content']",
         ".content_wrap",
         ".CafeViewer",
         ".article-content",
@@ -2001,13 +2056,16 @@ async def _extract_body(target) -> str:
     # 1) 직접 셀렉터
     text = await _text(target, selectors)
     if text and len(text) > 10:
-        return text
+        return _clean_content_text(text)
 
     # 2) JavaScript fallback
     try:
         text = await target.evaluate("""() => {
             const sels = [
                 '.se-main-container','#tbody','.article_body',
+                '.article-viewer','.ArticleViewer',
+                '[class*="ArticleViewer"],[class*="article_viewer"]',
+                '[class*="ArticleContent"],[class*="article_content"]',
                 '.content_wrap','.CafeViewer','.article-content',
                 'div#content','.view_content',
                 '.post_content','.post-content','div.view',
@@ -2015,13 +2073,15 @@ async def _extract_body(target) -> str:
                 '.rd_body','.xe_content'
             ];
             for (const s of sels) {
-                const el = document.querySelector(s);
-                if (el) { const t = el.innerText.trim(); if (t.length > 10) return t; }
+                try {
+                    const el = document.querySelector(s);
+                    if (el) { const t = el.innerText.trim(); if (t.length > 10) return t; }
+                } catch(e) {}
             }
             return '';
         }""")
         if text and len(text) > 10:
-            return text
+            return _clean_content_text(text)
     except Exception:
         pass
     return ""

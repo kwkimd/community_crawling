@@ -220,6 +220,9 @@ async def run_monitor():
                     article["site"] = "네이버 카페"
                     article["cafe_name"] = "아프니까사장이다"
                     article["monitoring_name"] = "아프니까사장이다"
+                    # list_date fallback: 목록 페이지 날짜가 개별 페이지보다 안정적
+                    if link_info.get("list_date") and not article.get("post_date"):
+                        article["post_date"] = link_info["list_date"]
                     all_new_posts.append(article)
                     existing_urls.add(normalized)  # 중복 방지
                     has_content = bool(article.get("content") and article["content"] != "(내용 없음)")
@@ -258,6 +261,16 @@ async def run_monitor():
     # Google Sheets에는 전체 저장, Slack에는 배민 언급 게시글만 필터링
     baemin_posts = [p for p in all_new_posts if _is_baemin_related(p)]
     print(f"[필터] 배민 관련 게시글: {len(baemin_posts)}건 / 전체 {len(all_new_posts)}건")
+
+    # 품질 가드: 본문·작성자가 없는 게시글은 Slack 알림에서 제외 (데이터 품질 보장)
+    quality_posts = [
+        p for p in baemin_posts
+        if p.get("content") and p["content"] != "(내용 없음)" and p.get("author")
+    ]
+    skipped_count = len(baemin_posts) - len(quality_posts)
+    if skipped_count > 0:
+        print(f"[품질가드] 데이터 불완전 게시글 {skipped_count}건 Slack 알림 제외 (본문/작성자 없음)")
+    baemin_posts = quality_posts
 
     if baemin_posts:
         from slack_notifier import send_slack_message
