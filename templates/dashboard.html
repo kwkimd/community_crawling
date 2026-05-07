@@ -3,37 +3,43 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>아프니까사장이다 분석 도구</title>
+  <title>🍽️ 외식업 배달앱 모니터링 대시보드</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body { font-family: 'Noto Sans KR', sans-serif; }
-    .tab-btn.active { @apply bg-blue-600 text-white; }
-    .spinner { border: 3px solid #e5e7eb; border-top-color: #2563eb; border-radius: 50%; width: 32px; height: 32px; animation: spin 0.8s linear infinite; }
+    .tab-btn.active { @apply bg-orange-600 text-white; }
+    .spinner { border: 3px solid #e5e7eb; border-top-color: #ea580c; border-radius: 50%; width: 32px; height: 32px; animation: spin 0.8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .tag { @apply inline-block px-2 py-0.5 rounded-full text-xs font-medium mr-1 mb-1; }
+    .risk-high { @apply bg-red-100 text-red-800; }
+    .risk-medium { @apply bg-yellow-100 text-yellow-800; }
+    .risk-low { @apply bg-green-100 text-green-800; }
+    .platform-baemin { @apply bg-blue-100 text-blue-800; }
+    .platform-coupang { @apply bg-purple-100 text-purple-800; }
+    .platform-yogiyo { @apply bg-pink-100 text-pink-800; }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
 
 <!-- 네비게이션 -->
-<nav class="bg-blue-700 text-white shadow-lg">
+<nav class="bg-gradient-to-r from-orange-600 to-red-600 text-white shadow-lg">
   <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
     <div class="flex items-center gap-3">
-      <span class="text-2xl font-bold">아프니까사장이다</span>
-      <span class="text-blue-200 text-sm">| 게시글 동향 분석 도구</span>
+      <span class="text-2xl font-bold">🍽️ 외식업 배달앱 모니터링</span>
+      <span class="text-orange-200 text-sm">| 자영업자 의견 • 트렌드 • 이슈 분석</span>
     </div>
-    <div class="text-sm text-blue-200">총 <span id="nav-total" class="text-white font-bold">{{ stats.total }}</span>개 게시글</div>
+    <div class="text-sm text-orange-200">총 <span id="nav-total" class="text-white font-bold">{{ stats.total }}</span>개 의견 수집</div>
   </div>
 </nav>
 
 <!-- 탭 메뉴 -->
 <div class="max-w-7xl mx-auto px-4 mt-6">
   <div class="flex gap-2 border-b border-gray-200 flex-wrap">
-    {% for tab in [('dashboard','대시보드'),('list','게시글 목록'),('analyze','AI 분석')] %}
+    {% for tab in [('dashboard','📊 비즈니스 현황'),('platform','🏪 배달앱 비교'),('alerts','🚨 실시간 알림'),('list','📝 의견 목록'),('analyze','🤖 AI 분석')] %}
     <button onclick="showTab('{{ tab[0] }}')"
       id="tab-{{ tab[0] }}"
-      class="tab-btn px-5 py-2.5 rounded-t-lg font-medium text-sm transition-colors text-gray-600 hover:bg-blue-50 border-b-2 border-transparent">
+      class="tab-btn px-5 py-2.5 rounded-t-lg font-medium text-sm transition-colors text-gray-600 hover:bg-orange-50 border-b-2 border-transparent">
       {{ tab[1] }}
     </button>
     {% endfor %}
@@ -42,12 +48,112 @@
 
 <div class="max-w-7xl mx-auto px-4 py-6">
 
-  <!-- ── 대시보드 탭 ────────────────────────────────────────────── -->
+  <!-- ── 비즈니스 현황 대시보드 탭 ────────────────────────────────────────────── -->
   <div id="tab-content-dashboard" class="tab-content">
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <!-- 실시간 알림 배너 -->
+    <div id="alert-banner" class="mb-6 hidden">
+      <div class="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg">
+        <div class="flex items-center">
+          <div class="flex-shrink-0">
+            <span class="text-red-400 text-xl">🚨</span>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-red-700" id="alert-message">
+              실시간 알림이 표시됩니다.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 핵심 지표 카드 -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
       <div class="bg-white rounded-xl shadow p-5 flex flex-col gap-1">
-        <span class="text-gray-500 text-sm">전체 게시글</span>
-        <span class="text-3xl font-bold text-blue-600" id="stat-total">{{ stats.total }}</span>
+        <span class="text-gray-500 text-sm">전체 의견</span>
+        <span class="text-3xl font-bold text-orange-600" id="stat-total">{{ stats.total }}</span>
+        <span class="text-xs text-gray-400">자영업자 + 소비자 의견</span>
+      </div>
+      <div class="bg-white rounded-xl shadow p-5 flex flex-col gap-1">
+        <span class="text-gray-500 text-sm">외식업자 의견</span>
+        <span class="text-3xl font-bold text-blue-600" id="stat-business-owners">-</span>
+        <span class="text-xs text-gray-400">사장님들의 직접 의견</span>
+      </div>
+      <div class="bg-white rounded-xl shadow p-5 flex flex-col gap-1">
+        <span class="text-gray-500 text-sm">수수료 이슈</span>
+        <span class="text-3xl font-bold text-red-600" id="stat-fee-issues">-</span>
+        <span class="text-xs text-gray-400">수수료 관련 불만/의견</span>
+      </div>
+      <div class="bg-white rounded-xl shadow p-5 flex flex-col gap-1">
+        <span class="text-gray-500 text-sm">고위험 이슈</span>
+        <span class="text-3xl font-bold text-purple-600" id="stat-high-risk">-</span>
+        <span class="text-xs text-gray-400">즉시 대응 필요</span>
+      </div>
+    </div>
+
+    <!-- 배달앱별 현황 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <div class="bg-white rounded-xl shadow p-6">
+        <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+          <span>🏪</span> 배달앱별 언급량
+        </h3>
+        <canvas id="platform-chart" width="400" height="200"></canvas>
+      </div>
+      <div class="bg-white rounded-xl shadow p-6">
+        <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+          <span>📊</span> 외식업자 vs 소비자 감성
+        </h3>
+        <canvas id="sentiment-comparison-chart" width="400" height="200"></canvas>
+      </div>
+    </div>
+
+    <!-- 이슈 카테고리 분포 -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+      <div class="bg-white rounded-xl shadow p-6">
+        <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+          <span>🔥</span> 주요 이슈 카테고리
+        </h3>
+        <canvas id="issue-categories-chart" width="300" height="200"></canvas>
+      </div>
+      <div class="bg-white rounded-xl shadow p-6">
+        <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+          <span>⚠️</span> 위험도 분포
+        </h3>
+        <canvas id="risk-distribution-chart" width="300" height="200"></canvas>
+      </div>
+      <div class="bg-white rounded-xl shadow p-6">
+        <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+          <span>👥</span> 주체별 분포
+        </h3>
+        <div id="subject-distribution" class="space-y-2">
+          <!-- JavaScript로 동적 생성 -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 배달앱 비교 분석 탭 ────────────────────────────────────────────── -->
+  <div id="tab-content-platform" class="tab-content hidden">
+    <div class="mb-6">
+      <h2 class="text-2xl font-bold text-gray-800 mb-2">🏪 배달앱 플랫폼 비교 분석</h2>
+      <p class="text-gray-600">각 배달앱에 대한 외식업자들의 의견과 트렌드를 비교 분석합니다.</p>
+    </div>
+
+    <div id="platform-comparison-content">
+      <!-- JavaScript로 동적 생성 -->
+    </div>
+  </div>
+
+  <!-- ── 실시간 알림 탭 ────────────────────────────────────────────── -->
+  <div id="tab-content-alerts" class="tab-content hidden">
+    <div class="mb-6">
+      <h2 class="text-2xl font-bold text-gray-800 mb-2">🚨 실시간 비즈니스 알림</h2>
+      <p class="text-gray-600">외식업에 영향을 줄 수 있는 중요한 이슈들을 실시간으로 모니터링합니다.</p>
+    </div>
+
+    <div id="alerts-content">
+      <!-- JavaScript로 동적 생성 -->
+    </div>
+  </div>
       </div>
       <div class="bg-white rounded-xl shadow p-5 flex flex-col gap-1">
         <span class="text-gray-500 text-sm">카테고리 수</span>
@@ -398,7 +504,7 @@ async function loadPosts() {
                 class="text-xs text-blue-500 hover:underline">원문 보기 ↗</a>` : ''}
           </div>
           <h4 class="font-medium text-gray-800 truncate">${escHtml(p.title)}</h4>
-          <p class="text-sm text-gray-500 mt-1 line-clamp-2">${escHtml(p.content.substring(0,150))}${p.content.length > 150 ? '...' : ''}</p>
+          ${(() => { const prev = p.summary || p.content || ''; return `<p class="text-sm mt-1 line-clamp-2 ${p.summary ? 'text-gray-700' : 'text-gray-400'}">${escHtml(prev.substring(0,120))}${prev.length > 120 ? '...' : ''}</p>`; })()}
           <div class="flex gap-4 mt-2 text-xs text-gray-400">
             <span>조회 ${p.view_count}</span>
             <span>댓글 ${p.comment_count}</span>
@@ -427,12 +533,25 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// 본문 텍스트 → 문장 단위 줄바꿈 (마침표·물음표·느낌표 뒤 줄바꿈, 숫자 마침표 제외)
+function formatContent(text) {
+  return String(text)
+    .replace(/([.!?。！？])(\s*)(?=[가-힣A-Za-z"'])/g, '$1\n')
+    .trim();
+}
+
+// AI 분석 텍스트 → \n을 <br>로 치환하여 innerHTML 삽입용 문자열 반환
+function formatAnalysisText(text) {
+  return escHtml(String(text || '')).replace(/\n/g, '<br>');
+}
+
 // ── 게시글 상세 모달 ──────────────────────────────────────────────────────────
 async function showPostModal(id) {
   const modal = document.getElementById('post-modal');
   // 로딩 상태
   document.getElementById('modal-title').textContent = '불러오는 중...';
   document.getElementById('modal-meta').innerHTML = '';
+  document.getElementById('modal-summary').innerHTML = '';
   document.getElementById('modal-content').textContent = '';
   document.getElementById('modal-comments').innerHTML = '';
   document.getElementById('modal-comment-count').textContent = '';
@@ -454,8 +573,23 @@ async function showPostModal(id) {
     ].join('');
 
     document.getElementById('modal-title').textContent = p.title;
+
+    // 요약 박스 (summary 있을 때만 표시)
+    const summaryEl = document.getElementById('modal-summary');
+    if (p.summary) {
+      const bullets = [p.summary, p.criticism_point].filter(Boolean);
+      summaryEl.innerHTML = `
+        <div class="bg-blue-50 rounded-xl p-4 border border-blue-100 space-y-1.5">
+          <p class="text-xs font-semibold text-blue-600 mb-2">📋 요약</p>
+          ${bullets.map(b => `<p class="text-sm text-gray-700">• ${escHtml(b)}</p>`).join('')}
+        </div>`;
+    } else {
+      summaryEl.innerHTML = '';
+    }
+
+    // 본문: 문장 단위 줄바꿈 처리
     document.getElementById('modal-content').textContent =
-      (p.content || '(내용 없음)').trim();
+      formatContent((p.content || '(내용 없음)').trim());
 
     // 댓글
     let comments = [];
@@ -694,7 +828,7 @@ function renderComprehensiveResults(analyses, postCount, period, timestamp = nul
   
   // 종합 요약 (리포트의 executive_summary 사용)
   const summary = analyses.report?.executive_summary || '종합 분석이 완료되었습니다.';
-  document.getElementById('analysis-summary').textContent = summary;
+  document.getElementById('analysis-summary').innerHTML = formatAnalysisText(summary);
   
   // 각 분석 결과 렌더링
   document.getElementById('sentiment-result').innerHTML = renderSentimentCompact(analyses.sentiment);
@@ -772,8 +906,8 @@ function renderTrendsCompact(r) {
   
   return `
     <div class="space-y-3">
-      <div class="text-xs text-gray-600 bg-blue-50 p-2 rounded">
-        ${escHtml(r.trend_summary?.substring(0,100) + '...' || '')}
+      <div class="text-xs text-gray-600 bg-blue-50 p-2 rounded leading-relaxed">
+        ${formatAnalysisText(r.trend_summary ?? '')}
       </div>
       ${r.topic_trends?.length ? `
         <div class="space-y-2">
@@ -893,7 +1027,7 @@ function renderSentiment(r) {
     </div>
     <div class="mb-4">
       <div class="text-sm font-medium text-gray-700 mb-2">요약</div>
-      <p class="text-gray-600 bg-gray-50 p-3 rounded-lg text-sm">${escHtml(r.summary ?? '')}</p>
+      <p class="text-gray-600 bg-gray-50 p-3 rounded-lg text-sm leading-relaxed">${formatAnalysisText(r.summary ?? '')}</p>
     </div>
     <div class="mb-4">
       <div class="text-sm font-medium text-gray-700 mb-2">주요 감정</div>
@@ -940,7 +1074,7 @@ function renderKeywords(r) {
 function renderTrends(r) {
   return `
     <div class="mb-4 bg-blue-50 p-4 rounded-xl">
-      <p class="text-gray-700">${escHtml(r.trend_summary ?? '')}</p>
+      <p class="text-gray-700 leading-relaxed">${formatAnalysisText(r.trend_summary ?? '')}</p>
     </div>
     <div class="mb-6">
       <div class="text-sm font-medium text-gray-700 mb-3">주제별 트렌드</div>
@@ -975,7 +1109,7 @@ function renderReport(r) {
   return `
     <div class="mb-4 bg-blue-50 rounded-xl p-4">
       <div class="text-sm font-medium text-blue-800 mb-2">요약</div>
-      <p class="text-gray-700">${escHtml(r.executive_summary ?? '')}</p>
+      <p class="text-gray-700 leading-relaxed">${formatAnalysisText(r.executive_summary ?? '')}</p>
     </div>
     <div class="mb-4">
       <div class="text-sm font-medium text-gray-700 mb-2">핵심 발견사항</div>
@@ -1235,8 +1369,8 @@ function renderTrendsCompact(r) {
   
   return `
     <div class="space-y-3">
-      <div class="text-xs text-gray-600 bg-blue-50 p-2 rounded">
-        ${escHtml(r.trend_summary?.substring(0,100) + '...' || '')}
+      <div class="text-xs text-gray-600 bg-blue-50 p-2 rounded leading-relaxed">
+        ${formatAnalysisText(r.trend_summary ?? '')}
       </div>
       ${r.topic_trends?.length ? `
         <div class="space-y-2">
@@ -1352,7 +1486,9 @@ function escHtml(s) {
         class="text-gray-400 hover:text-gray-600 text-2xl leading-none mt-0.5 shrink-0">✕</button>
     </div>
     <!-- 본문 + 댓글 스크롤 영역 -->
-    <div class="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+    <div class="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+      <!-- 요약 박스 (summary 있을 때만 표시) -->
+      <div id="modal-summary"></div>
       <!-- 본문 -->
       <div>
         <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">본문</h3>
